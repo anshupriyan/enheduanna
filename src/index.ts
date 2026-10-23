@@ -38,7 +38,27 @@ for (let i = 2; i < process.argv.length; i++) {
 // Initialize workspace root
 const workspaceRootEnv = process.env.WORKSPACE_ROOT;
 const workspaceRootArg = positionalArgs[0];
-export const workspaceRoot = path.resolve(workspaceRootArg || workspaceRootEnv || process.cwd());
+export let workspaceRoot = path.resolve(workspaceRootArg || workspaceRootEnv || process.cwd());
+
+// Initialize Policy Mode if --policy or CLI_BRIDGE_POLICY config was provided
+let activePolicyEngine: PolicyEngine | undefined;
+let activeAuditLogger: PolicyAuditLogger | undefined;
+
+try {
+  const loaded = loadPolicyFromArgs(process.argv, workspaceRoot);
+  activePolicyEngine = loaded.policyEngine;
+  activeAuditLogger = loaded.auditLogger;
+
+  if (activePolicyEngine && !workspaceRootArg && !workspaceRootEnv) {
+    const primary = activePolicyEngine.getAllowedRoots()[0]?.path;
+    if (primary) {
+      workspaceRoot = primary;
+    }
+  }
+} catch (err: any) {
+  console.error(`[cli-bridge] Fatal error during policy loading: ${err.message}`);
+  process.exit(1);
+}
 
 // Verify workspace root exists and is a directory
 try {
@@ -49,19 +69,6 @@ try {
   }
 } catch (err) {
   console.error(`[cli-bridge] Error: Workspace root "${workspaceRoot}" does not exist.`);
-  process.exit(1);
-}
-
-// Initialize Policy Mode if --policy or CLI_BRIDGE_POLICY config was provided
-let activePolicyEngine: PolicyEngine | undefined;
-let activeAuditLogger: PolicyAuditLogger | undefined;
-
-try {
-  const loaded = loadPolicyFromArgs(process.argv, workspaceRoot);
-  activePolicyEngine = loaded.policyEngine;
-  activeAuditLogger = loaded.auditLogger;
-} catch (err: any) {
-  console.error(`[cli-bridge] Fatal error during policy loading: ${err.message}`);
   process.exit(1);
 }
 
@@ -1641,7 +1648,8 @@ export async function handleToolCall(toolName: string, args: any): Promise<any> 
       const timeoutMs = parsed.data.timeout || 30000;
 
       if (activePolicyEngine) {
-        const cwdArg = parsed.data.cwd || ".";
+        const defaultCwd = activePolicyEngine.getAllowedRoots()[0]?.path || workspaceRoot;
+        const cwdArg = (parsed.data.cwd && parsed.data.cwd !== ".") ? parsed.data.cwd : defaultCwd;
         const decision = activePolicyEngine.checkCommand(parsed.data.command, parsed.data.args, cwdArg);
         policyDecision = decision;
         if (!decision.allowed) {

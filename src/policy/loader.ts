@@ -42,16 +42,23 @@ export function loadPolicyFromArgs(argv: string[] = process.argv, defaultWorkspa
     throw new Error(`Failed to read policy configuration file "${resolvedConfigPath}": ${err.message}`);
   }
 
-  let parsed: unknown;
+  let parsed: any;
   try {
     parsed = JSON.parse(rawJson);
   } catch (err: any) {
     throw new Error(`Policy configuration file "${resolvedConfigPath}" is not valid JSON: ${err.message}`);
   }
 
+  let effectiveWorkspaceRoot = defaultWorkspaceRoot;
+  if (parsed && Array.isArray(parsed.roots) && parsed.roots.length > 0 && parsed.roots[0].path) {
+    if (!defaultWorkspaceRoot || defaultWorkspaceRoot === process.cwd()) {
+      effectiveWorkspaceRoot = path.resolve(parsed.roots[0].path);
+    }
+  }
+
   const engine = new PolicyEngine(parsed, {
     configPath: resolvedConfigPath,
-    workspaceRoot: defaultWorkspaceRoot,
+    workspaceRoot: effectiveWorkspaceRoot,
   });
 
   const auditLogger = new PolicyAuditLogger(engine.getAuditLogPath());
