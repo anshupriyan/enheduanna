@@ -12,6 +12,9 @@ export type RootConfig = z.infer<typeof RootConfigSchema>;
 export const UnknownCommandActionSchema = z.enum(["allow", "ask", "deny"]);
 export type UnknownCommandAction = z.infer<typeof UnknownCommandActionSchema>;
 
+export const UnknownPathActionSchema = z.enum(["ask", "deny"]);
+export type UnknownPathAction = z.infer<typeof UnknownPathActionSchema>;
+
 export const PolicyCommandsSchema = z.object({
   restricted: z.array(z.string()).default([]),
   approve: z.array(z.string()).default([]),
@@ -25,6 +28,7 @@ export const PolicyConfigSchema = z.object({
   restricted_paths_write: z.array(z.string()).default([]),
   commands: PolicyCommandsSchema.default({ restricted: [], approve: [] }),
   unknown_command: UnknownCommandActionSchema.default("allow"),
+  unknown_path: UnknownPathActionSchema.default("deny"),
   audit_log_path: z.string().optional(),
 });
 export type PolicyConfig = z.infer<typeof PolicyConfigSchema>;

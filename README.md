@@ -268,6 +268,7 @@ The policy file is strict JSON, validated with Zod upon startup. Any invalid con
     "approve": ["npm-publish", "terraform"]
   },
   "unknown_command": "allow",
+  "unknown_path": "ask",
   "audit_log_path": "C:/Logs/cli-bridge-audit.log"
 }
 ```
@@ -291,6 +292,7 @@ The policy file is strict JSON, validated with Zod upon startup. Any invalid con
 5. **Argument Path Scanning**: Any command argument resembling a filesystem path is validated against the path policy. For instance, running `type C:\Users\user\.ssh\id_rsa` or `git diff ../outside` is rejected even if `type` or `git` is permitted.
 6. **Approver Interface**: Commands marked under `"approve"` or unlisted commands when `"unknown_command": "ask"` trigger an `Approver` decision (`allow`, `ask`, `deny`, `approved`, `rejected`).
 7. **Directory Walk Filtering**: Directory listings (`list_directory`), glob searches (`search_files`), and content grep (`grep_content`) automatically filter and omit restricted files and folders.
+8. **Just-In-Time (JIT) Ephemeral Permissions**: With `"unknown_path": "ask"`, accessing an unconfigured path triggers the Approver. The AI agent can also call `request_path_access(path, access?, reason?)` to request session-only access to an external directory without modifying `policy.json` or restarting the server. Ephemeral permissions are stored purely in memory and reset on restart. System-restricted paths (`~/.ssh`, `.env`, etc.) can **never** be granted via JIT elevation.
 
 ---
 

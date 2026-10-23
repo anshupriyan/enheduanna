@@ -423,6 +423,12 @@ const ToggleDevModeSchema = z.object({
 
 const GetDevModeStatusSchema = z.object({});
 
+const RequestPathAccessSchema = z.object({
+  path: z.string().describe("Path to the directory to request temporary session access for"),
+  access: z.enum(["ro", "rw"]).optional().default("ro").describe("Desired access level: 'ro' (read-only, default) or 'rw' (read-write)"),
+  reason: z.string().optional().describe("Optional reason why access is required"),
+});
+
 interface DirectoryEntry {
   name: string;
   size: number;
@@ -1039,6 +1045,33 @@ const TOOLS = [
     annotations: {
       readOnlyHint: true
     }
+  },
+  {
+    name: "request_path_access",
+    description: "Request temporary in-memory session access to a directory outside configured roots. If granted, the directory becomes accessible for this session until server restart. Blocked for system-restricted locations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Path to the directory to request session access for"
+        },
+        access: {
+          type: "string",
+          enum: ["ro", "rw"],
+          description: "Desired access level: 'ro' (read-only, default) or 'rw' (read-write)"
+        },
+        reason: {
+          type: "string",
+          description: "Optional reason explaining why access to this directory is required"
+        }
+      },
+      required: ["path"]
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false
+    }
   }
 ];
 
@@ -1201,6 +1234,39 @@ export async function handleToolCall(toolName: string, args: any): Promise<any> 
         : "Dev Mode is currently OFF (shell command execution is BLOCKED).";
       return {
         content: [{ type: "text", text: message }]
+      };
+    }
+
+    case "request_path_access": {
+      const parsed = RequestPathAccessSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }],
+          isError: true
+        };
+      }
+
+      if (!activePolicyEngine) {
+        return {
+          content: [{ type: "text", text: "Notice: Server is operating in default Workspace Mode. Path access requests are only available in Policy Mode." }],
+          isError: true
+        };
+      }
+
+      const decision = activePolicyEngine.addSessionRoot(parsed.data.path, parsed.data.access || "ro");
+      if (!decision.allowed) {
+        return {
+          content: [{ type: "text", text: `Blocked: ${decision.reason} (rule: ${decision.ruleId})` }],
+          isError: true,
+          policyDecision: decision
+        };
+      }
+
+      const grantedMsg = `Session access granted for "${parsed.data.path}" (${parsed.data.access || "ro"}). Directory is now accessible until server restart.`;
+      console.error(`[cli-bridge] ${grantedMsg}`);
+      return {
+        content: [{ type: "text", text: grantedMsg }],
+        policyDecision: decision
       };
     }
 

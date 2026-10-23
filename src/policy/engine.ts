@@ -81,6 +81,7 @@ export class PolicyEngine {
   private auditLogPath?: string;
   private workspaceRoot: string;
   private canonicalRoots: { path: string; access: "rw" | "ro" }[] = [];
+  private sessionRoots: { path: string; access: "rw" | "ro" }[] = [];
   private canonicalRestrictedPaths: string[] = [];
   private canonicalRestrictedPathsWrite: string[] = [];
   private restrictedGlobs: RegExp[] = [];
@@ -164,7 +165,74 @@ export class PolicyEngine {
   }
 
   public getAllowedRoots(): { path: string; access: "rw" | "ro" }[] {
-    return this.canonicalRoots;
+    return [...this.canonicalRoots, ...this.sessionRoots].sort((a, b) => b.path.length - a.path.length);
+  }
+
+  public getSessionRoots(): { path: string; access: "rw" | "ro" }[] {
+    return this.sessionRoots;
+  }
+
+  /**
+   * Adds an ephemeral session root. Restricted paths CAN NEVER be granted as a session root.
+   */
+  public addSessionRoot(rootPath: string, access: "rw" | "ro" = "ro"): PolicyDecision {
+    const canonical = canonicalizePath(rootPath, this.workspaceRoot);
+    const cPath = canonical.canonicalPath;
+
+    if (canonical.isReservedDevice || canonical.isDanglingSymlink) {
+      return {
+        allowed: false,
+        decision: "deny",
+        ruleId: "PATH_INVALID",
+        reason: `Cannot grant session root: Path "${rootPath}" is invalid or a reserved device.`,
+        canonicalPath: cPath,
+      };
+    }
+
+    // Check if path is in restricted_paths or globs - RESTRICTED CAN NEVER BE GRANTED!
+    const baseName = path.basename(cPath);
+    const normCanonical = cPath.replace(/\\/g, "/");
+    for (const globRegex of this.restrictedGlobs) {
+      if (globRegex.test(normCanonical) || globRegex.test(baseName)) {
+        return {
+          allowed: false,
+          decision: "deny",
+          ruleId: "PATH_RESTRICTED_GLOB",
+          reason: `Access denied: Path "${rootPath}" matches a restricted pattern and cannot be granted as a session root.`,
+          canonicalPath: cPath,
+        };
+      }
+    }
+
+    for (const restricted of this.canonicalRestrictedPaths) {
+      if (isInsideOrEqual(restricted, cPath) || arePathsEqual(restricted, cPath)) {
+        return {
+          allowed: false,
+          decision: "deny",
+          ruleId: "PATH_RESTRICTED",
+          reason: `Access denied: Path "${rootPath}" resolves into restricted location "${restricted}" and cannot be granted as a session root.`,
+          canonicalPath: cPath,
+        };
+      }
+    }
+
+    // Add or update in sessionRoots
+    const existingIndex = this.sessionRoots.findIndex((r) => arePathsEqual(r.path, cPath));
+    if (existingIndex !== -1) {
+      this.sessionRoots[existingIndex].access = access;
+    } else {
+      this.sessionRoots.push({ path: cPath, access });
+    }
+
+    this.sessionRoots.sort((a, b) => b.path.length - a.path.length);
+
+    return {
+      allowed: true,
+      decision: "approved",
+      ruleId: "SESSION_ROOT_ADDED",
+      reason: `Session root granted for "${cPath}" (${access}).`,
+      canonicalPath: cPath,
+    };
   }
 
   public setApprover(approver: Approver): void {
@@ -253,9 +321,49 @@ export class PolicyEngine {
       }
     }
 
-    // Must be inside an allowed root
-    const matchingRoot = this.canonicalRoots.find((root) => isInsideOrEqual(root.path, cPath));
+    // Must be inside an allowed root (configured roots or active session roots)
+    const allRoots = [...this.canonicalRoots, ...this.sessionRoots].sort((a, b) => b.path.length - a.path.length);
+    const matchingRoot = allRoots.find((root) => isInsideOrEqual(root.path, cPath));
+
     if (!matchingRoot) {
+      if (this.config.unknown_path === "ask") {
+        const approved = this.approver.request("access_path", {
+          path: cPath,
+          userPath,
+          operation,
+        });
+
+        if (approved === true) {
+          let dirToGrant = cPath;
+          try {
+            const stat = fs.statSync(cPath);
+            if (!stat.isDirectory()) {
+              dirToGrant = path.dirname(cPath);
+            }
+          } catch {
+            dirToGrant = path.dirname(cPath);
+          }
+          const accessLevel: "rw" | "ro" = (operation === "write" || operation === "delete") ? "rw" : "ro";
+          this.addSessionRoot(dirToGrant, accessLevel);
+
+          return {
+            allowed: true,
+            decision: "approved",
+            ruleId: "PATH_JIT_APPROVED",
+            reason: `Access to "${userPath}" was approved by approver for this session.`,
+            canonicalPath: cPath,
+          };
+        } else {
+          return {
+            allowed: false,
+            decision: "rejected",
+            ruleId: "PATH_JIT_REJECTED",
+            reason: `Access to path "${userPath}" outside allowed roots was requested and denied by approver.`,
+            canonicalPath: cPath,
+          };
+        }
+      }
+
       return {
         allowed: false,
         decision: "deny",

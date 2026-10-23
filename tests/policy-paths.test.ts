@@ -3,6 +3,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
 import { PolicyEngine } from "../src/policy/engine.js";
+import { SyncMockApprover } from "../src/policy/approver.js";
 
 describe("Policy Engine - Path Security & Evaluation", () => {
   const workspaceRoot = fs.realpathSync(process.cwd());
@@ -144,6 +145,67 @@ describe("Policy Engine - Path Security & Evaluation", () => {
       const trailingSpace = engine.checkPath("package.json ", "read");
       expect(trailingDot.canonicalPath).toBe(normal.canonicalPath);
       expect(trailingSpace.canonicalPath).toBe(normal.canonicalPath);
+    });
+
+    it("allows adding an ephemeral session root dynamically", () => {
+      const externalDir = path.join(os.tmpdir(), "cli-bridge-session-root-test");
+      if (!fs.existsSync(externalDir)) fs.mkdirSync(externalDir, { recursive: true });
+
+      // Before adding: blocked as outside allowed roots
+      expect(engine.checkPath(externalDir, "read").allowed).toBe(false);
+
+      // Add session root with read-only access
+      const grantRes = engine.addSessionRoot(externalDir, "ro");
+      expect(grantRes.allowed).toBe(true);
+      expect(grantRes.ruleId).toBe("SESSION_ROOT_ADDED");
+
+      // Now allowed to read
+      expect(engine.checkPath(externalDir, "read").allowed).toBe(true);
+      // But writing is blocked because access is ro
+      expect(engine.checkPath(path.join(externalDir, "new.txt"), "write").allowed).toBe(false);
+
+      // Cleanup
+      try { fs.rmSync(externalDir, { recursive: true, force: true }); } catch {}
+    });
+
+    it("blocks adding a restricted path as a session root (restricted invariant holds)", () => {
+      const secretTarget = path.join(workspaceRoot, "restricted-area");
+      const grantRes = engine.addSessionRoot(secretTarget, "rw");
+      expect(grantRes.allowed).toBe(false);
+      expect(grantRes.ruleId).toBe("PATH_RESTRICTED");
+
+      const sshTarget = path.join(os.homedir(), ".ssh");
+      const sshRes = engine.addSessionRoot(sshTarget, "rw");
+      expect(sshRes.allowed).toBe(false);
+    });
+
+    it("supports unknown_path: 'ask' for just-in-time approval", () => {
+      const mockApprover = new SyncMockApprover(false);
+      const jitEngine = new PolicyEngine(
+        { ...validConfig, unknown_path: "ask" },
+        { approver: mockApprover, workspaceRoot }
+      );
+
+      const target = path.join(os.tmpdir(), "jit-approval-test-folder");
+      if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+
+      // When approver rejects:
+      const deniedDecision = jitEngine.checkPath(target, "read");
+      expect(deniedDecision.allowed).toBe(false);
+      expect(deniedDecision.decision).toBe("rejected");
+      expect(deniedDecision.ruleId).toBe("PATH_JIT_REJECTED");
+
+      // When approver approves:
+      mockApprover.setDecision(true);
+      const approvedDecision = jitEngine.checkPath(target, "read");
+      expect(approvedDecision.allowed).toBe(true);
+      expect(approvedDecision.decision).toBe("approved");
+      expect(approvedDecision.ruleId).toBe("PATH_JIT_APPROVED");
+
+      // Subsequent access in same session is now automatically inside session roots!
+      expect(jitEngine.checkPath(target, "read").allowed).toBe(true);
+
+      try { fs.rmSync(target, { recursive: true, force: true }); } catch {}
     });
   });
 });

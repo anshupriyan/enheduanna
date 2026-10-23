@@ -4,6 +4,10 @@
     {
       "path": "C:/meta hackathon/cli-bridge",
       "access": "rw"
+    },
+    {
+      "path": "C:/Downloads",
+      "access": "ro"
     }
   ],
   "restricted_paths": [
@@ -25,5 +29,6 @@
     ]
   },
   "unknown_command": "allow",
+  "unknown_path": "ask",
   "audit_log_path": "C:/meta hackathon/cli-bridge/.cli-bridge-audit.log"
 }

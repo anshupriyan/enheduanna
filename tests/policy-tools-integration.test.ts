@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 import {
   handleToolCall,
   executeTool,
@@ -206,5 +207,49 @@ describe("Tool Integration with Policy Engine", () => {
     const content = fs.readFileSync(auditLogFile, "utf-8");
     expect(content).toContain("PATH_RESTRICTED");
     expect(content).toContain("blocked");
+  });
+
+  it("dynamically grants session access to an unlisted directory via request_path_access tool", async () => {
+    const extraDir = path.join(testDir, "extra_unlisted_dir");
+    if (!fs.existsSync(extraDir)) fs.mkdirSync(extraDir, { recursive: true });
+    const extraFile = path.join(extraDir, "doc.txt");
+    fs.writeFileSync(extraFile, "extra document contents", "utf-8");
+
+    // Before requesting: read_file is blocked because extraDir is not in roots
+    // Note: To test unlisted directory, let's place extraDir outside testDir
+    const outsideDir = path.join(os.tmpdir(), "cli_bridge_extra_test_dir");
+    if (!fs.existsSync(outsideDir)) fs.mkdirSync(outsideDir, { recursive: true });
+    const outsideFile = path.join(outsideDir, "external.txt");
+    fs.writeFileSync(outsideFile, "outside contents", "utf-8");
+
+    const initialRead = await handleToolCall("read_file", { path: outsideFile });
+    expect(initialRead.isError).toBe(true);
+    expect(initialRead.policyDecision.ruleId).toBe("PATH_OUTSIDE_ALLOWED_ROOTS");
+
+    // Call request_path_access tool
+    const grantRes = await handleToolCall("request_path_access", {
+      path: outsideDir,
+      access: "ro",
+      reason: "User requested inspection of external directory"
+    });
+    expect(grantRes.isError).toBeUndefined();
+    expect(grantRes.content[0].text).toContain("Session access granted");
+
+    // Now read_file succeeds!
+    const afterRead = await handleToolCall("read_file", { path: outsideFile });
+    expect(afterRead.isError).toBeUndefined();
+    expect(afterRead.content[0].text).toBe("outside contents");
+
+    try { fs.rmSync(outsideDir, { recursive: true, force: true }); } catch {}
+  });
+
+  it("blocks request_path_access when requesting restricted paths", async () => {
+    const res = await handleToolCall("request_path_access", {
+      path: restrictedDir,
+      access: "rw",
+      reason: "Agent attempting to access restricted area"
+    });
+    expect(res.isError).toBe(true);
+    expect(res.policyDecision.ruleId).toBe("PATH_RESTRICTED");
   });
 });
