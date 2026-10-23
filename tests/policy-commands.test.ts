@@ -121,4 +121,40 @@ describe("Policy Engine - Command Security & Evaluation", () => {
     expect(approvedDecision.allowed).toBe(true);
     expect(approvedDecision.decision).toBe("approved");
   });
+
+  it("dynamically grants session command approval via addSessionCommand", () => {
+    // Engine with unknown_command = deny
+    const engine = new PolicyEngine({ ...baseConfig, unknown_command: "deny" }, { workspaceRoot });
+
+    // Initially blocked
+    const initialCheck = engine.checkCommand("cargo", ["--version"]);
+    expect(initialCheck.allowed).toBe(false);
+    expect(initialCheck.ruleId).toBe("CMD_UNKNOWN_DENY");
+
+    // Grant session command
+    const grantResult = engine.addSessionCommand("cargo");
+    expect(grantResult.allowed).toBe(true);
+    expect(grantResult.ruleId).toBe("SESSION_COMMAND_ADDED");
+    expect(engine.getSessionCommands()).toContain("cargo");
+
+    // Now allowed for the session
+    const subsequentCheck = engine.checkCommand("cargo", ["--version"]);
+    expect(subsequentCheck.allowed).toBe(true);
+    expect(subsequentCheck.ruleId).toBe("CMD_SESSION_ALLOWED");
+  });
+
+  it("refuses to grant session command for built-in or user restricted commands", () => {
+    const engine = new PolicyEngine(baseConfig, { workspaceRoot });
+
+    // Built-in restricted cannot be granted
+    const curlResult = engine.addSessionCommand("curl");
+    expect(curlResult.allowed).toBe(false);
+    expect(curlResult.ruleId).toBe("CMD_RESTRICTED_BUILTIN");
+
+    // User configured restricted cannot be granted
+    const userRestrictedResult = engine.addSessionCommand("custom-restricted-tool");
+    expect(userRestrictedResult.allowed).toBe(false);
+    expect(userRestrictedResult.ruleId).toBe("CMD_RESTRICTED_CONFIG");
+  });
 });
+

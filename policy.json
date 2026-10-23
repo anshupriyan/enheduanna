@@ -28,7 +28,7 @@
       "npm-publish"
     ]
   },
-  "unknown_command": "allow",
+  "unknown_command": "ask",
   "unknown_path": "ask",
   "audit_log_path": "C:/meta hackathon/cli-bridge/.cli-bridge-audit.log"
 }

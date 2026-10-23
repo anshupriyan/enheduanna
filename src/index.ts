@@ -429,6 +429,11 @@ const RequestPathAccessSchema = z.object({
   reason: z.string().optional().describe("Optional reason why access is required"),
 });
 
+const RequestCommandAccessSchema = z.object({
+  command: z.string().describe("The executable command name to request session approval for (e.g. 'cargo', 'pip')"),
+  reason: z.string().optional().describe("Optional reason explaining why this command is required")
+});
+
 interface DirectoryEntry {
   name: string;
   size: number;
@@ -1072,6 +1077,28 @@ const TOOLS = [
       readOnlyHint: false,
       destructiveHint: false
     }
+  },
+  {
+    name: "request_command_access",
+    description: "Request temporary in-memory session approval to execute a command that is not on the policy approve list. If granted, the command can be executed until server restart. Blocked for system-restricted and dangerous commands.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "Command name to request session access for (e.g. 'cargo', 'pip', 'terraform')"
+        },
+        reason: {
+          type: "string",
+          description: "Optional reason explaining why execution of this command is required"
+        }
+      },
+      required: ["command"]
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false
+    }
   }
 ];
 
@@ -1263,6 +1290,39 @@ export async function handleToolCall(toolName: string, args: any): Promise<any> 
       }
 
       const grantedMsg = `Session access granted for "${parsed.data.path}" (${parsed.data.access || "ro"}). Directory is now accessible until server restart.`;
+      console.error(`[cli-bridge] ${grantedMsg}`);
+      return {
+        content: [{ type: "text", text: grantedMsg }],
+        policyDecision: decision
+      };
+    }
+
+    case "request_command_access": {
+      const parsed = RequestCommandAccessSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }],
+          isError: true
+        };
+      }
+
+      if (!activePolicyEngine) {
+        return {
+          content: [{ type: "text", text: "Notice: Server is operating in default Workspace Mode. Command access requests are only available in Policy Mode." }],
+          isError: true
+        };
+      }
+
+      const decision = activePolicyEngine.addSessionCommand(parsed.data.command);
+      if (!decision.allowed) {
+        return {
+          content: [{ type: "text", text: `Blocked: ${decision.reason} (rule: ${decision.ruleId})` }],
+          isError: true,
+          policyDecision: decision
+        };
+      }
+
+      const grantedMsg = `Session command approval granted for "${parsed.data.command}". Command can now be executed until server restart (Dev Mode must still be enabled).`;
       console.error(`[cli-bridge] ${grantedMsg}`);
       return {
         content: [{ type: "text", text: grantedMsg }],
@@ -1651,7 +1711,8 @@ export async function handleToolCall(toolName: string, args: any): Promise<any> 
           clearTimeout(timer);
           resolve({
             content: [{ type: "text", text: `Failed to start command: ${error.message}` }],
-            isError: true
+            isError: true,
+            policyDecision
           });
         });
 
@@ -1660,7 +1721,8 @@ export async function handleToolCall(toolName: string, args: any): Promise<any> 
           if (killedDueToTimeout) {
             resolve({
               content: [{ type: "text", text: `Error: Command execution timed out after ${timeoutMs}ms.` }],
-              isError: true
+              isError: true,
+              policyDecision
             });
           } else {
             resolve({
@@ -1673,7 +1735,8 @@ export async function handleToolCall(toolName: string, args: any): Promise<any> 
                     exitCode: code
                   }, null, 2)
                 }
-              ]
+              ],
+              policyDecision
             });
           }
         });

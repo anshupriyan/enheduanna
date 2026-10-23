@@ -75,6 +75,8 @@ All tools are strictly confined to the workspace root directory.
 | `edit_file(path, old_str, new_str)` | Targeted find-and-replace; errors on zero or multiple matches |
 | `execute_command(command, args, cwd?, timeout?)` | Shell execution, **gated by Dev Mode** — see warning above |
 | `toggle_dev_mode(enable_dev_mode)` | Enables/re-locks shell execution for the current session only |
+| `request_path_access(path, access?, reason?)` | *(Policy Mode)* Request ephemeral session access to an unconfigured directory |
+| `request_command_access(command, reason?)` | *(Policy Mode)* Request ephemeral session approval to execute an unlisted command |
 | `log_journal_entry(summary, files_changed?, commit_hash?, project?)` | Appends a structured entry to `PROJECT_LOG.md` |
 
 </details>
@@ -292,7 +294,9 @@ The policy file is strict JSON, validated with Zod upon startup. Any invalid con
 5. **Argument Path Scanning**: Any command argument resembling a filesystem path is validated against the path policy. For instance, running `type C:\Users\user\.ssh\id_rsa` or `git diff ../outside` is rejected even if `type` or `git` is permitted.
 6. **Approver Interface**: Commands marked under `"approve"` or unlisted commands when `"unknown_command": "ask"` trigger an `Approver` decision (`allow`, `ask`, `deny`, `approved`, `rejected`).
 7. **Directory Walk Filtering**: Directory listings (`list_directory`), glob searches (`search_files`), and content grep (`grep_content`) automatically filter and omit restricted files and folders.
-8. **Just-In-Time (JIT) Ephemeral Permissions**: With `"unknown_path": "ask"`, accessing an unconfigured path triggers the Approver. The AI agent can also call `request_path_access(path, access?, reason?)` to request session-only access to an external directory without modifying `policy.json` or restarting the server. Ephemeral permissions are stored purely in memory and reset on restart. System-restricted paths (`~/.ssh`, `.env`, etc.) can **never** be granted via JIT elevation.
+8. **Just-In-Time (JIT) Ephemeral Permissions**:
+   - **Path JIT Access**: With `"unknown_path": "ask"`, accessing an unconfigured path triggers the Approver. The AI agent can also call `request_path_access(path, access?, reason?)` to request session-only access to an external directory without modifying `policy.json` or restarting the server. Ephemeral permissions are stored purely in memory and reset on restart. System-restricted paths (`~/.ssh`, `.env`, etc.) can **never** be granted via JIT elevation.
+   - **Command JIT Approval**: With `"unknown_command": "ask"`, executing a command not on the approved list triggers the Approver. The AI agent can call `request_command_access(command, reason?)` to request session approval for a specific tool (e.g. `cargo`, `pip`, `terraform`). Once granted, the command can run for that session without modifying `policy.json`. Restricted commands (e.g. `curl`, `powershell`, nested shells, inline interpreters) can **never** be bypassed.
 
 ---
 

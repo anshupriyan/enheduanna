@@ -252,4 +252,63 @@ describe("Tool Integration with Policy Engine", () => {
     expect(res.isError).toBe(true);
     expect(res.policyDecision.ruleId).toBe("PATH_RESTRICTED");
   });
+
+  it("dynamically grants session command approval via request_command_access tool", async () => {
+    // Reconfigure engine with unknown_command: "deny"
+    const denyEngine = new PolicyEngine(
+      {
+        mode: "policy" as const,
+        roots: [{ path: testDir, access: "rw" as const }],
+        restricted_paths: [restrictedDir],
+        restricted_paths_write: [],
+        commands: { restricted: ["forbidden-tool"], approve: [] },
+        unknown_command: "deny" as const,
+        audit_log_path: auditLogFile,
+      },
+      { configPath: policyConfigFile, auditLogPath: auditLogFile, workspaceRoot: testDir }
+    );
+    setPolicyMode(denyEngine, auditLogger);
+    setDevMode(true);
+
+    // Initial check: git is blocked because unknown_command is deny
+    const initialRun = await handleToolCall("execute_command", {
+      command: "git",
+      args: ["--version"],
+    });
+    expect(initialRun.isError).toBe(true);
+    expect(initialRun.policyDecision.ruleId).toBe("CMD_UNKNOWN_DENY");
+
+    // Call request_command_access tool
+    const grantRes = await handleToolCall("request_command_access", {
+      command: "git",
+      reason: "Agent needs git to inspect repository state",
+    });
+    expect(grantRes.isError).toBeUndefined();
+    expect(grantRes.content[0].text).toContain("Session command approval granted");
+
+    // Next run passes policy check (decision allowed)
+    const afterRun = await handleToolCall("execute_command", {
+      command: "git",
+      args: ["--version"],
+    });
+    expect(afterRun.policyDecision.allowed).toBe(true);
+    expect(afterRun.policyDecision.ruleId).toBe("CMD_SESSION_ALLOWED");
+  });
+
+  it("blocks request_command_access when requesting restricted commands", async () => {
+    const resBuiltin = await handleToolCall("request_command_access", {
+      command: "curl",
+      reason: "Attempting to download binary",
+    });
+    expect(resBuiltin.isError).toBe(true);
+    expect(resBuiltin.policyDecision.ruleId).toBe("CMD_RESTRICTED_BUILTIN");
+
+    const resConfig = await handleToolCall("request_command_access", {
+      command: "forbidden-tool",
+      reason: "Attempting to use forbidden tool",
+    });
+    expect(resConfig.isError).toBe(true);
+    expect(resConfig.policyDecision.ruleId).toBe("CMD_RESTRICTED_CONFIG");
+  });
 });
+

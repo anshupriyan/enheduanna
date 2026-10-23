@@ -82,6 +82,7 @@ export class PolicyEngine {
   private workspaceRoot: string;
   private canonicalRoots: { path: string; access: "rw" | "ro" }[] = [];
   private sessionRoots: { path: string; access: "rw" | "ro" }[] = [];
+  private sessionCommands: Set<string> = new Set();
   private canonicalRestrictedPaths: string[] = [];
   private canonicalRestrictedPathsWrite: string[] = [];
   private restrictedGlobs: RegExp[] = [];
@@ -170,6 +171,48 @@ export class PolicyEngine {
 
   public getSessionRoots(): { path: string; access: "rw" | "ro" }[] {
     return this.sessionRoots;
+  }
+
+  public getSessionCommands(): string[] {
+    return Array.from(this.sessionCommands);
+  }
+
+  /**
+   * Adds an ephemeral session command. Restricted commands CAN NEVER be granted as a session command.
+   */
+  public addSessionCommand(command: string): PolicyDecision {
+    const normCmd = normalizeCommandName(command);
+
+    if (BUILT_IN_RESTRICTED_COMMANDS.has(normCmd)) {
+      return {
+        allowed: false,
+        decision: "deny",
+        ruleId: "CMD_RESTRICTED_BUILTIN",
+        reason: `Cannot grant session command: Command "${command}" is restricted by system security policy.`,
+        command: normCmd,
+      };
+    }
+
+    const userRestricted = new Set(this.config.commands.restricted.map(normalizeCommandName));
+    if (userRestricted.has(normCmd)) {
+      return {
+        allowed: false,
+        decision: "deny",
+        ruleId: "CMD_RESTRICTED_CONFIG",
+        reason: `Cannot grant session command: Command "${command}" is restricted by user policy configuration.`,
+        command: normCmd,
+      };
+    }
+
+    this.sessionCommands.add(normCmd);
+
+    return {
+      allowed: true,
+      decision: "approved",
+      ruleId: "SESSION_COMMAND_ADDED",
+      reason: `Session command granted for "${normCmd}".`,
+      command: normCmd,
+    };
   }
 
   /**
@@ -498,13 +541,25 @@ export class PolicyEngine {
       };
     }
 
-    // 7. Check user config approve list
+    // 7. Check if command was granted for this session
+    if (this.sessionCommands.has(normCmd)) {
+      return {
+        allowed: true,
+        decision: "approved",
+        ruleId: "CMD_SESSION_ALLOWED",
+        reason: `Command "${command}" is permitted for this session.`,
+        command: normCmd,
+        args,
+      };
+    }
+
+    // 8. Check user config approve list
     const userApprove = new Set(this.config.commands.approve.map(normalizeCommandName));
     if (userApprove.has(normCmd)) {
       return this.evaluateApproval("execute_command", { command, normCmd, args, cwd }, "CMD_APPROVE_LIST");
     }
 
-    // 8. Handle unknown_command
+    // 9. Handle unknown_command
     switch (this.config.unknown_command) {
       case "deny":
         return {
@@ -533,6 +588,7 @@ export class PolicyEngine {
   private evaluateApproval(action: string, details: Record<string, any>, ruleId: string): PolicyDecision {
     const approved = this.approver.request(action, details);
     if (approved === true) {
+      this.sessionCommands.add(details.normCmd);
       return {
         allowed: true,
         decision: "approved",
