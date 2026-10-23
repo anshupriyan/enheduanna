@@ -1,0 +1,29 @@
+{
+  "mode": "policy",
+  "roots": [
+    {
+      "path": "C:/meta hackathon/cli-bridge",
+      "access": "rw"
+    }
+  ],
+  "restricted_paths": [
+    "**/.env",
+    "**/.env.*",
+    "C:/meta hackathon/cli-bridge/secrets"
+  ],
+  "restricted_paths_write": [
+    "C:/Windows",
+    "C:/Program Files",
+    "C:/Program Files (x86)"
+  ],
+  "commands": {
+    "restricted": [
+      "git-push"
+    ],
+    "approve": [
+      "npm-publish"
+    ]
+  },
+  "unknown_command": "allow",
+  "audit_log_path": "C:/meta hackathon/cli-bridge/.cli-bridge-audit.log"
+}
