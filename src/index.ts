@@ -14,13 +14,31 @@ import { spawn } from "child_process";
 import * as readline from "readline";
 import { rgPath } from "@vscode/ripgrep";
 
+import { fileURLToPath } from "url";
+import {
+  PolicyEngine,
+  PolicyAuditLogger,
+  loadPolicyFromArgs,
+} from "./policy/index.js";
+
 // In-memory Dev Mode state for shell execution (defaults to false on server startup)
 let devModeEnabled = false;
 
+// Filter positional arguments (ignoring flags like --policy <file> or --policy=<file>)
+const positionalArgs: string[] = [];
+for (let i = 2; i < process.argv.length; i++) {
+  const arg = process.argv[i];
+  if (arg === "--policy") {
+    i++; // skip policy path argument
+  } else if (!arg.startsWith("--")) {
+    positionalArgs.push(arg);
+  }
+}
+
 // Initialize workspace root
 const workspaceRootEnv = process.env.WORKSPACE_ROOT;
-const workspaceRootArg = process.argv[2];
-const workspaceRoot = path.resolve(workspaceRootArg || workspaceRootEnv || process.cwd());
+const workspaceRootArg = positionalArgs[0];
+export const workspaceRoot = path.resolve(workspaceRootArg || workspaceRootEnv || process.cwd());
 
 // Verify workspace root exists and is a directory
 try {
@@ -34,9 +52,44 @@ try {
   process.exit(1);
 }
 
+// Initialize Policy Mode if --policy or CLI_BRIDGE_POLICY config was provided
+let activePolicyEngine: PolicyEngine | undefined;
+let activeAuditLogger: PolicyAuditLogger | undefined;
+
+try {
+  const loaded = loadPolicyFromArgs(process.argv, workspaceRoot);
+  activePolicyEngine = loaded.policyEngine;
+  activeAuditLogger = loaded.auditLogger;
+} catch (err: any) {
+  console.error(`[cli-bridge] Fatal error during policy loading: ${err.message}`);
+  process.exit(1);
+}
+
+export function setPolicyMode(engine?: PolicyEngine, auditLogger?: PolicyAuditLogger): void {
+  activePolicyEngine = engine;
+  activeAuditLogger = auditLogger;
+}
+
+export function getPolicyEngine(): PolicyEngine | undefined {
+  return activePolicyEngine;
+}
+
+export function setDevMode(enabled: boolean): void {
+  devModeEnabled = enabled;
+}
+
+export function getDevMode(): boolean {
+  return devModeEnabled;
+}
+
 console.error(`[cli-bridge] Workspace root set to: ${workspaceRoot}`);
 console.error(`[cli-bridge] Using bundled ripgrep binary: ${rgPath}`);
 console.error(`[cli-bridge] Dev Mode initialized: ${devModeEnabled ? "ON (shell execution ENABLED)" : "OFF (shell execution BLOCKED)"}`);
+if (activePolicyEngine) {
+  console.error(`[cli-bridge] Policy mode ACTIVE with ${activePolicyEngine.getAllowedRoots().length} root(s).`);
+} else {
+  console.error(`[cli-bridge] Workspace mode ACTIVE (default single-workspace boundary).`);
+}
 
 /**
  * Resolves user path relative to workspace root, checks for directory traversal,
@@ -387,11 +440,22 @@ async function walkDirectory(dir: string, baseDir: string, entries: DirectoryEnt
     }
     const fullPath = path.join(dir, dirent.name);
     let resolvedPath: string;
-    try {
-      resolvedPath = resolveSafePath(workspaceRoot, fullPath);
-    } catch {
-      // Skip if it escapes the workspace root
-      continue;
+    if (activePolicyEngine) {
+      if (activePolicyEngine.isRestrictedPath(fullPath)) {
+        continue;
+      }
+      const check = activePolicyEngine.checkPath(fullPath, "list", workspaceRoot);
+      if (!check.allowed) {
+        continue;
+      }
+      resolvedPath = check.canonicalPath || fullPath;
+    } else {
+      try {
+        resolvedPath = resolveSafePath(workspaceRoot, fullPath);
+      } catch {
+        // Skip if it escapes the workspace root
+        continue;
+      }
     }
 
     const name = path.relative(baseDir, resolvedPath).replace(/\\/g, '/');
@@ -440,10 +504,21 @@ async function listDirectory(dirPath: string, recursive: boolean): Promise<Direc
     }
     const fullPath = path.join(dirPath, dirent.name);
     let resolvedPath: string;
-    try {
-      resolvedPath = resolveSafePath(workspaceRoot, fullPath);
-    } catch {
-      continue;
+    if (activePolicyEngine) {
+      if (activePolicyEngine.isRestrictedPath(fullPath)) {
+        continue;
+      }
+      const check = activePolicyEngine.checkPath(fullPath, "list", workspaceRoot);
+      if (!check.allowed) {
+        continue;
+      }
+      resolvedPath = check.canonicalPath || fullPath;
+    } else {
+      try {
+        resolvedPath = resolveSafePath(workspaceRoot, fullPath);
+      } catch {
+        continue;
+      }
     }
 
     let isDirectory = dirent.isDirectory();
@@ -566,11 +641,22 @@ async function ripgrepGrep(
 
           const fullPath = path.join(targetDir, relPath);
           let resolvedRelPath: string;
-          try {
-            const realP = resolveSafePath(workspaceRoot, fullPath);
-            resolvedRelPath = path.relative(workspaceRoot, realP).replace(/\\/g, "/");
-          } catch {
-            continue;
+          if (activePolicyEngine) {
+            if (activePolicyEngine.isRestrictedPath(fullPath)) {
+              continue;
+            }
+            const decision = activePolicyEngine.checkPath(fullPath, "search", workspaceRoot);
+            if (!decision.allowed) {
+              continue;
+            }
+            resolvedRelPath = path.relative(targetDir, decision.canonicalPath || fullPath).replace(/\\/g, "/");
+          } else {
+            try {
+              const realP = resolveSafePath(workspaceRoot, fullPath);
+              resolvedRelPath = path.relative(workspaceRoot, realP).replace(/\\/g, "/");
+            } catch {
+              continue;
+            }
           }
 
           matches.push({
@@ -623,10 +709,21 @@ async function manualGrep(
 
       const fullPath = path.join(dir, name);
       let resolvedPath: string;
-      try {
-        resolvedPath = resolveSafePath(workspaceRoot, fullPath);
-      } catch {
-        continue;
+      if (activePolicyEngine) {
+        if (activePolicyEngine.isRestrictedPath(fullPath)) {
+          continue;
+        }
+        const decision = activePolicyEngine.checkPath(fullPath, "search", workspaceRoot);
+        if (!decision.allowed) {
+          continue;
+        }
+        resolvedPath = decision.canonicalPath || fullPath;
+      } else {
+        try {
+          resolvedPath = resolveSafePath(workspaceRoot, fullPath);
+        } catch {
+          continue;
+        }
       }
 
       if (dirent.isDirectory()) {
@@ -982,7 +1079,18 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
 /**
  * Appends a JSON structured audit log line directly to the target project's or root's .cli-bridge-audit.log
  */
-function appendAuditLog(tool: string, args: any, status: string) {
+function appendAuditLog(tool: string, args: any, status: string, policyDecision?: any) {
+  if (activeAuditLogger) {
+    const dummyDecision = policyDecision || {
+      allowed: status === "success",
+      decision: status === "success" ? "allow" : "deny",
+      ruleId: "TOOL_EXECUTION",
+      reason: status,
+    };
+    activeAuditLogger.logDecision(tool, args, dummyDecision, status as any);
+    return;
+  }
+
   try {
     let targetPathArg = "";
     if (args) {
@@ -1031,11 +1139,7 @@ function appendAuditLog(tool: string, args: any, status: string) {
   }
 }
 
-// Register call tool handler
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const toolName = request.params.name;
-  const args: any = request.params.arguments || {};
-
+export async function executeTool(toolName: string, args: any = {}): Promise<any> {
   // Log every tool call to stderr
   console.error(`[cli-bridge] Tool invocation: ${toolName} with args ${JSON.stringify(args)}`);
 
@@ -1049,7 +1153,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         status = "error";
       }
     }
-    appendAuditLog(toolName, args, status);
+    appendAuditLog(toolName, args, status, response.policyDecision);
     return response;
   } catch (error: any) {
     appendAuditLog(toolName, args, "error");
@@ -1059,12 +1163,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       isError: true
     };
   }
+}
+
+// Register call tool handler
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  return executeTool(request.params.name, request.params.arguments || {});
 });
 
 /**
  * Handles individual tool requests.
  */
-async function handleToolCall(toolName: string, args: any): Promise<any> {
+export async function handleToolCall(toolName: string, args: any): Promise<any> {
   switch (toolName) {
     case "toggle_dev_mode": {
       const parsed = ToggleDevModeSchema.safeParse(args);
@@ -1104,7 +1213,22 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
         };
       }
 
-      const resolvedPath = resolveSafePath(workspaceRoot, parsed.data.path);
+      let resolvedPath: string;
+      let policyDecision: any;
+      if (activePolicyEngine) {
+        const decision = activePolicyEngine.checkPath(parsed.data.path, "read", workspaceRoot);
+        policyDecision = decision;
+        if (!decision.allowed) {
+          return {
+            content: [{ type: "text", text: `Blocked: ${decision.reason} (rule: ${decision.ruleId})` }],
+            isError: true,
+            policyDecision: decision,
+          };
+        }
+        resolvedPath = decision.canonicalPath!;
+      } else {
+        resolvedPath = resolveSafePath(workspaceRoot, parsed.data.path);
+      }
 
       const stat = await fs.promises.stat(resolvedPath);
       if (!stat.isFile()) {
@@ -1126,7 +1250,8 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
       }
 
       return {
-        content: [{ type: "text", text: content }]
+        content: [{ type: "text", text: content }],
+        policyDecision
       };
     }
 
@@ -1139,7 +1264,22 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
         };
       }
 
-      const resolvedPath = resolveSafePath(workspaceRoot, parsed.data.path);
+      let resolvedPath: string;
+      let policyDecision: any;
+      if (activePolicyEngine) {
+        const decision = activePolicyEngine.checkPath(parsed.data.path, "list", workspaceRoot);
+        policyDecision = decision;
+        if (!decision.allowed) {
+          return {
+            content: [{ type: "text", text: `Blocked: ${decision.reason} (rule: ${decision.ruleId})` }],
+            isError: true,
+            policyDecision: decision,
+          };
+        }
+        resolvedPath = decision.canonicalPath!;
+      } else {
+        resolvedPath = resolveSafePath(workspaceRoot, parsed.data.path);
+      }
 
       const stat = await fs.promises.stat(resolvedPath);
       if (!stat.isDirectory()) {
@@ -1151,7 +1291,8 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
 
       const entries = await listDirectory(resolvedPath, !!parsed.data.recursive);
       return {
-        content: [{ type: "text", text: JSON.stringify(entries, null, 2) }]
+        content: [{ type: "text", text: JSON.stringify(entries, null, 2) }],
+        policyDecision
       };
     }
 
@@ -1164,7 +1305,22 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
         };
       }
 
-      const targetDir = resolveSafePath(workspaceRoot, parsed.data.path || ".");
+      let targetDir: string;
+      let policyDecision: any;
+      if (activePolicyEngine) {
+        const decision = activePolicyEngine.checkPath(parsed.data.path || ".", "search", workspaceRoot);
+        policyDecision = decision;
+        if (!decision.allowed) {
+          return {
+            content: [{ type: "text", text: `Blocked: ${decision.reason} (rule: ${decision.ruleId})` }],
+            isError: true,
+            policyDecision: decision,
+          };
+        }
+        targetDir = decision.canonicalPath!;
+      } else {
+        targetDir = resolveSafePath(workspaceRoot, parsed.data.path || ".");
+      }
 
       const stat = await fs.promises.stat(targetDir);
       if (!stat.isDirectory()) {
@@ -1176,7 +1332,8 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
 
       const results = await searchFiles(targetDir, parsed.data.pattern);
       return {
-        content: [{ type: "text", text: JSON.stringify(results, null, 2) }]
+        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+        policyDecision
       };
     }
 
@@ -1189,7 +1346,23 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
         };
       }
 
-      const targetDir = resolveSafePath(workspaceRoot, parsed.data.path || ".");
+      let targetDir: string;
+      let policyDecision: any;
+      if (activePolicyEngine) {
+        const decision = activePolicyEngine.checkPath(parsed.data.path || ".", "search", workspaceRoot);
+        policyDecision = decision;
+        if (!decision.allowed) {
+          return {
+            content: [{ type: "text", text: `Blocked: ${decision.reason} (rule: ${decision.ruleId})` }],
+            isError: true,
+            policyDecision: decision,
+          };
+        }
+        targetDir = decision.canonicalPath!;
+      } else {
+        targetDir = resolveSafePath(workspaceRoot, parsed.data.path || ".");
+      }
+
       const stat = await fs.promises.stat(targetDir);
       if (!stat.isDirectory()) {
         return {
@@ -1206,7 +1379,8 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
 
       const matches = await performGrep(targetDir, pattern, caseSensitive, maxResults);
       return {
-        content: [{ type: "text", text: JSON.stringify(matches, null, 2) }]
+        content: [{ type: "text", text: JSON.stringify(matches, null, 2) }],
+        policyDecision
       };
     }
 
@@ -1219,13 +1393,30 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
         };
       }
 
-      const resolvedPath = resolveSafePath(workspaceRoot, parsed.data.path);
+      let resolvedPath: string;
+      let policyDecision: any;
+      if (activePolicyEngine) {
+        const decision = activePolicyEngine.checkPath(parsed.data.path, "write", workspaceRoot);
+        policyDecision = decision;
+        if (!decision.allowed) {
+          return {
+            content: [{ type: "text", text: `Blocked: ${decision.reason} (rule: ${decision.ruleId})` }],
+            isError: true,
+            policyDecision: decision,
+          };
+        }
+        resolvedPath = decision.canonicalPath!;
+      } else {
+        resolvedPath = resolveSafePath(workspaceRoot, parsed.data.path);
+      }
+
       console.error(`[cli-bridge] Writing file: "${resolvedPath}" (content length: ${parsed.data.content.length} characters)`);
 
       await fs.promises.mkdir(path.dirname(resolvedPath), { recursive: true });
       await fs.promises.writeFile(resolvedPath, parsed.data.content, "utf-8");
       return {
-        content: [{ type: "text", text: `Successfully wrote file: ${parsed.data.path}` }]
+        content: [{ type: "text", text: `Successfully wrote file: ${parsed.data.path}` }],
+        policyDecision
       };
     }
 
@@ -1238,7 +1429,23 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
         };
       }
 
-      const resolvedPath = resolveSafePath(workspaceRoot, parsed.data.path);
+      let resolvedPath: string;
+      let policyDecision: any;
+      if (activePolicyEngine) {
+        const decision = activePolicyEngine.checkPath(parsed.data.path, "write", workspaceRoot);
+        policyDecision = decision;
+        if (!decision.allowed) {
+          return {
+            content: [{ type: "text", text: `Blocked: ${decision.reason} (rule: ${decision.ruleId})` }],
+            isError: true,
+            policyDecision: decision,
+          };
+        }
+        resolvedPath = decision.canonicalPath!;
+      } else {
+        resolvedPath = resolveSafePath(workspaceRoot, parsed.data.path);
+      }
+
       console.error(`[cli-bridge] Editing file: "${resolvedPath}"`);
 
       const stat = await fs.promises.stat(resolvedPath);
@@ -1278,7 +1485,8 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
       const updatedContent = content.replace(oldStr, newStr);
       await fs.promises.writeFile(resolvedPath, updatedContent, "utf-8");
       return {
-        content: [{ type: "text", text: `Successfully edited file: ${parsed.data.path}` }]
+        content: [{ type: "text", text: `Successfully edited file: ${parsed.data.path}` }],
+        policyDecision
       };
     }
 
@@ -1301,31 +1509,51 @@ async function handleToolCall(toolName: string, args: any): Promise<any> {
         };
       }
 
-      // Pre-flight path safety scan
-      const unsafePaths = scanForUnsafePaths(parsed.data.command, parsed.data.args);
-      if (unsafePaths.length > 0) {
-        const blockedMsg = `Blocked: command references path(s) outside workspace root: ${JSON.stringify(unsafePaths)}. If this is intentional, note this tool only allows execution scoped to the workspace root.`;
-        console.error(`[cli-bridge] ${blockedMsg}`);
-        return {
-          content: [{ type: "text", text: blockedMsg }],
-          isError: true
-        };
-      }
-
-      const resolvedCwd = resolveSafePath(workspaceRoot, parsed.data.cwd || ".");
+      let resolvedCwd: string;
+      let useShell: boolean;
+      let policyDecision: any;
       const timeoutMs = parsed.data.timeout || 30000;
 
-      // Determine if command needs shell wrapper on Windows
-      const useShell = shouldWinShell(parsed.data.command);
+      if (activePolicyEngine) {
+        const cwdArg = parsed.data.cwd || ".";
+        const decision = activePolicyEngine.checkCommand(parsed.data.command, parsed.data.args, cwdArg);
+        policyDecision = decision;
+        if (!decision.allowed) {
+          const blockedMsg = `Blocked: ${decision.reason} (rule: ${decision.ruleId})`;
+          console.error(`[cli-bridge] ${blockedMsg}`);
+          return {
+            content: [{ type: "text", text: blockedMsg }],
+            isError: true,
+            policyDecision: decision,
+          };
+        }
+        const cwdCheck = activePolicyEngine.checkPath(cwdArg, "read", workspaceRoot);
+        resolvedCwd = cwdCheck.canonicalPath || path.resolve(workspaceRoot, cwdArg);
+        useShell = shouldWinShell(parsed.data.command);
+      } else {
+        // Pre-flight path safety scan in legacy mode
+        const unsafePaths = scanForUnsafePaths(parsed.data.command, parsed.data.args);
+        if (unsafePaths.length > 0) {
+          const blockedMsg = `Blocked: command references path(s) outside workspace root: ${JSON.stringify(unsafePaths)}. If this is intentional, note this tool only allows execution scoped to the workspace root.`;
+          console.error(`[cli-bridge] ${blockedMsg}`);
+          return {
+            content: [{ type: "text", text: blockedMsg }],
+            isError: true
+          };
+        }
 
-      // Hardened metacharacter scan for shell: true path to prevent cmd breakout vulnerabilities
-      if (useShell && hasShellMetacharacters(parsed.data.args)) {
-        const blockedMsg = `Blocked: command arguments contain characters not permitted for shell wrapper scripts: ${JSON.stringify(parsed.data.args)}. Permitted arguments cannot contain the following characters: ${SHELL_METACHARS.join(" ")}`;
-        console.error(`[cli-bridge] ${blockedMsg}`);
-        return {
-          content: [{ type: "text", text: blockedMsg }],
-          isError: true
-        };
+        resolvedCwd = resolveSafePath(workspaceRoot, parsed.data.cwd || ".");
+        useShell = shouldWinShell(parsed.data.command);
+
+        // Hardened metacharacter scan for shell: true path to prevent cmd breakout vulnerabilities
+        if (useShell && hasShellMetacharacters(parsed.data.args)) {
+          const blockedMsg = `Blocked: command arguments contain characters not permitted for shell wrapper scripts: ${JSON.stringify(parsed.data.args)}. Permitted arguments cannot contain the following characters: ${SHELL_METACHARS.join(" ")}`;
+          console.error(`[cli-bridge] ${blockedMsg}`);
+          return {
+            content: [{ type: "text", text: blockedMsg }],
+            isError: true
+          };
+        }
       }
 
       console.error(`[cli-bridge] Executing command: "${parsed.data.command}" with args: ${JSON.stringify(parsed.data.args)} in cwd: "${resolvedCwd}" (timeout: ${timeoutMs}ms, shell: ${useShell})`);
@@ -1507,13 +1735,21 @@ This log tracks development history and work continuity.
 }
 
 // Run server using Stdio transport
-async function run() {
+export async function runServer() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("[cli-bridge] Server connected and listening on stdin/stdout");
 }
 
-run().catch((error) => {
-  console.error(`[cli-bridge] Server startup failed: ${error.stack || error.message || error}`);
-  process.exit(1);
-});
+const isDirectRun = process.argv[1] && (
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) ||
+  path.resolve(process.argv[1]).endsWith("build/index.js") ||
+  path.resolve(process.argv[1]).endsWith("build\\index.js")
+);
+
+if (isDirectRun) {
+  runServer().catch((error) => {
+    console.error(`[cli-bridge] Server startup failed: ${error.stack || error.message || error}`);
+    process.exit(1);
+  });
+}
