@@ -24,11 +24,18 @@
     "restricted": [
       "git-push"
     ],
+    "allow": [
+      "python",
+      "python3",
+      "node",
+      "git",
+      "uv"
+    ],
     "approve": [
       "npm-publish"
     ]
   },
-  "unknown_command": "ask",
+  "unknown_command": "allow",
   "unknown_path": "ask",
   "audit_log_path": "C:/meta hackathon/cli-bridge/.cli-bridge-audit.log"
 }

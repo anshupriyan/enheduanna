@@ -541,7 +541,20 @@ export class PolicyEngine {
       };
     }
 
-    // 7. Check if command was granted for this session
+    // 7. Check user config allow list
+    const userAllow = new Set(this.config.commands.allow.map(normalizeCommandName));
+    if (userAllow.has(normCmd)) {
+      return {
+        allowed: true,
+        decision: "allow",
+        ruleId: "CMD_ALLOWED_CONFIG",
+        reason: `Command "${command}" is pre-approved by user policy configuration.`,
+        command: normCmd,
+        args,
+      };
+    }
+
+    // 8. Check if command was granted for this session
     if (this.sessionCommands.has(normCmd)) {
       return {
         allowed: true,
@@ -553,7 +566,7 @@ export class PolicyEngine {
       };
     }
 
-    // 8. Check user config approve list
+    // 9. Check user config approve list
     const userApprove = new Set(this.config.commands.approve.map(normalizeCommandName));
     if (userApprove.has(normCmd)) {
       return this.evaluateApproval("execute_command", { command, normCmd, args, cwd }, "CMD_APPROVE_LIST");

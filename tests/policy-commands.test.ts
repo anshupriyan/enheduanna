@@ -156,5 +156,29 @@ describe("Policy Engine - Command Security & Evaluation", () => {
     expect(userRestrictedResult.allowed).toBe(false);
     expect(userRestrictedResult.ruleId).toBe("CMD_RESTRICTED_CONFIG");
   });
+
+  it("permits pre-approved commands from commands.allow even when unknown_command is deny", () => {
+    const engine = new PolicyEngine(
+      {
+        ...baseConfig,
+        commands: {
+          restricted: [],
+          allow: ["python", "python3", "uv", "git"],
+          approve: [],
+        },
+        unknown_command: "deny",
+      },
+      { workspaceRoot }
+    );
+
+    const pyDecision = engine.checkCommand("python3", ["--version"]);
+    expect(pyDecision.allowed).toBe(true);
+    expect(pyDecision.ruleId).toBe("CMD_ALLOWED_CONFIG");
+
+    // Unlisted command is denied
+    const rustDecision = engine.checkCommand("rustc", ["--version"]);
+    expect(rustDecision.allowed).toBe(false);
+    expect(rustDecision.ruleId).toBe("CMD_UNKNOWN_DENY");
+  });
 });
 

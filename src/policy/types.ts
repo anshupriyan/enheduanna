@@ -17,6 +17,7 @@ export type UnknownPathAction = z.infer<typeof UnknownPathActionSchema>;
 
 export const PolicyCommandsSchema = z.object({
   restricted: z.array(z.string()).default([]),
+  allow: z.array(z.string()).default([]),
   approve: z.array(z.string()).default([]),
 });
 export type PolicyCommands = z.infer<typeof PolicyCommandsSchema>;
