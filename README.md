@@ -230,10 +230,82 @@ Add `cli-bridge` to the `mcpServers` object in your Qwen Studio configuration:
 
 ---
 
+## Operational Modes
+
+`cli-bridge` supports two operational modes:
+
+### 1. Workspace Mode (Default)
+In standard workspace mode, all tools (`read_file`, `write_file`, `edit_file`, `list_directory`, `search_files`, `grep_content`, `execute_command`) are strictly confined to a single designated workspace root directory. Symlink escapes, dangling symlinks ([GHSA-8jc4-x8v7-2q9r](https://github.com/advisories/GHSA-8jc4-x8v7-2q9r)), and relative path traversals (`../`) are blocked.
+
+### 2. Policy Mode (Opt-In)
+Policy mode expands filesystem and execution boundaries across multiple allowed directory roots with granular permissions (`ro` vs `rw`), explicit denylists, command policies, and argument path scanning.
+
+Activate policy mode using either:
+- CLI argument: `node build/index.js --policy /path/to/policy.json [optional_default_cwd]`
+- Environment variable: `CLI_BRIDGE_POLICY=/path/to/policy.json`
+
+#### Policy Configuration Schema
+The policy file is strict JSON, validated with Zod upon startup. Any invalid configuration fails closed immediately.
+
+```json
+{
+  "mode": "policy",
+  "roots": [
+    { "path": "C:/Projects/webapp", "access": "rw" },
+    { "path": "C:/Projects/shared-docs", "access": "ro" }
+  ],
+  "restricted_paths": [
+    "C:/Projects/webapp/secrets",
+    "**/.env",
+    "**/.env.*"
+  ],
+  "restricted_paths_write": [
+    "C:/Windows",
+    "C:/Program Files"
+  ],
+  "commands": {
+    "restricted": ["git-push", "dropdb"],
+    "approve": ["npm-publish", "terraform"]
+  },
+  "unknown_command": "allow",
+  "audit_log_path": "C:/Logs/cli-bridge-audit.log"
+}
+```
+
+#### Policy Hierarchy & Rules
+1. **Canonicalization & Normalization**: Extended length `\\?\` prefixes and Windows trailing dots/spaces are normalized. Non-existent target paths resolve through their nearest canonical ancestor to prevent dangling-symlink write escapes.
+2. **Restricted Paths Always Win**: If an allowed root contains a restricted directory or pattern, restricted access takes precedence unconditionally.
+3. **Built-In Restricted Invariants**: The following locations are hard-coded restrictions that cannot be removed by user configuration:
+   - `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.azure`
+   - Browser user profile directories (Chrome, Edge, Firefox, Brave)
+   - Windows credential stores and vaults
+   - The active policy configuration file
+   - The audit log file
+   - `PROJECT_LOG.md` (protected from tool read/write tampering)
+4. **Command Restrictions & Inline Interpreters**:
+   - Dev Mode still gates `execute_command`. Once enabled, executables are normalized (stripping paths, `.exe`/`.cmd`/`.bat`, and case).
+   - Restricted by default:
+     - **Inline interpreters & nested shells**: `cmd /c`, `powershell -Command|-EncodedCommand`, `pwsh -Command|-EncodedCommand`, `bash -c`, `wsl`, `python -c`, `node -e`.
+     - **Network exfiltration tools**: `curl`, `wget`, `Invoke-WebRequest`, `iwr`, `certutil`, `bitsadmin`, `scp`, `ftp`.
+     - **Destructive system commands**: `format`, `diskpart`, `reg`, `net`, `schtasks`, `sc`, `takeown`, `icacls`, `bcdedit`, `shutdown`, `vssadmin`, `cipher`.
+5. **Argument Path Scanning**: Any command argument resembling a filesystem path is validated against the path policy. For instance, running `type C:\Users\user\.ssh\id_rsa` or `git diff ../outside` is rejected even if `type` or `git` is permitted.
+6. **Approver Interface**: Commands marked under `"approve"` or unlisted commands when `"unknown_command": "ask"` trigger an `Approver` decision (`allow`, `ask`, `deny`, `approved`, `rejected`).
+7. **Directory Walk Filtering**: Directory listings (`list_directory`), glob searches (`search_files`), and content grep (`grep_content`) automatically filter and omit restricted files and folders.
+
+---
+
 ## Testing and Debugging
 
+Run the full automated test suite (including characterization tests, path policy, command policy, and tool integration):
+
 ```bash
-npx @modelcontextprotocol/inspector node build/index.js <YOUR_DEFAULT_WORKSPACE_PATH>
+npm test
+```
+
+Inspect the MCP server interactively:
+
+```bash
+npx @modelcontextprotocol/inspector node build/index.js <YOUR_WORKSPACE_PATH>
 ```
 
 ---
@@ -241,3 +313,4 @@ npx @modelcontextprotocol/inspector node build/index.js <YOUR_DEFAULT_WORKSPACE_
 <p align="center">
   <sub>Built as a local-first MCP tool. No cloud dependency, no telemetry, no data leaves your machine.</sub>
 </p>
+
