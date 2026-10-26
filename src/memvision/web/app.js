@@ -293,7 +293,14 @@ function renderCaptures() {
         <div class="card-thumb-container">
           <img class="card-thumb-img" src="/api/screenshot/${c.id}" alt="Screenshot #${c.id}" loading="lazy" onerror="this.src='/fallback.png'">
           <div class="card-badge-row">
-            <span class="app-badge ${appColor}">${escapeHtml(c.app_name || 'desktop')}</span>
+            <div style="display: flex; align-items: center; gap: 0.35rem;">
+              <span class="app-badge ${appColor}">${escapeHtml(c.app_name || 'desktop')}</span>
+              ${c.is_spatially_masked ? `
+                <span class="privacy-masked-badge" title="Restricted window masked: ${escapeHtml((c.spatial_masked_windows || []).join(', ') || 'Protected')}">
+                  🔒 Masked
+                </span>
+              ` : ''}
+            </div>
             <span class="time-badge">${timeFormatted}</span>
           </div>
         </div>
@@ -392,8 +399,11 @@ async function openCaptureDetail(captureId) {
     const capture = await res.json();
     state.selectedCapture = capture;
 
-    elements.modalScreenshotImg.src = `/api/screenshot/${capture.id}`;
+    const maskedList = capture.metadata?.spatial_masked_windows || [];
     elements.modalAppBadge.textContent = capture.app_name || 'System';
+    if (maskedList.length > 0) {
+      elements.modalAppBadge.textContent += ` [🔒 Masked: ${maskedList.join(', ')}]`;
+    }
     elements.modalWindowTitle.textContent = capture.window_title || 'Untitled Window';
     elements.modalCaptureId.textContent = `#${capture.id}`;
     elements.modalTimestamp.textContent = new Date(capture.timestamp).toLocaleString();

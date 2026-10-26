@@ -560,6 +560,20 @@ body {
   color: var(--text-muted);
 }
 
+.privacy-masked-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.22rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.25);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  color: #fca5a5;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .card-body {
   padding: 0.9rem;
   display: flex;

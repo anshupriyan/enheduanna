@@ -12,7 +12,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -178,3 +178,24 @@ class PrivacyGatekeeper:
                     )
 
         return PrivacyDecision(is_allowed=True, action="pass", reason="Passed all privacy checks")
+
+    def filter_blocked_windows(
+        self, windows: List[Any]
+    ) -> List[Tuple[Any, PrivacyDecision]]:
+        """
+        Evaluates a collection of visible desktop windows against privacy policies.
+        Returns a list of (VisibleWindow, PrivacyDecision) for each window violating privacy rules.
+        """
+        if not self.enabled:
+            return []
+
+        blocked: List[Tuple[Any, PrivacyDecision]] = []
+        for win in windows:
+            decision = self.evaluate(
+                app_name=getattr(win, "app_name", ""),
+                window_title=getattr(win, "window_title", ""),
+                url=None,
+            )
+            if not decision.is_allowed:
+                blocked.append((win, decision))
+        return blocked

@@ -15,7 +15,7 @@ from typing import Callable, Optional
 from memvision.capture import ScreenCapturer
 from memvision.change_detector import ChangeDetector
 from memvision.config import AppConfig
-from memvision.context import ContextExtractor, WindowContext
+from memvision.context import ContextExtractor, WindowContext, VisibleWindow
 from memvision.ocr import LocalOCREngine
 from memvision.privacy import PrivacyGatekeeper
 from memvision.storage import CaptureRecord, MemoryStorage
@@ -70,6 +70,7 @@ class CaptureEngine:
         """
         Executes a single capture tick.
         Useful for on-demand captures, unit testing, and CLI dry-runs.
+        Implements Approach 1: Spatial Window Masking ("The Blackout Curtain").
         """
         # 1. Grab screen in 100% full native resolution
         try:
@@ -78,66 +79,127 @@ class CaptureEngine:
             logger.error("Screen capture failed: %s", e)
             return None
 
-        # 2. Check for visual change
-        has_changed, distance, hash_str = self.change_detector.evaluate_change(img)
-        if not has_changed and not force:
-            logger.debug("Tick: No visual change detected (dist=%d <= thresh=%d)", distance, self.config.capture.hash_threshold)
-            return None
-
-        # 3. Extract active window and browser context
+        # 2. Extract active foreground window and visible top-level windows
         ctx: WindowContext = self.context_extractor.get_active_context()
+        visible_windows: list[VisibleWindow] = self.context_extractor.get_visible_windows()
 
-        # 4. Privacy Gatekeeper check (Priority #1)
-        decision = self.privacy_gate.evaluate(
+        # 3. Detect visible windows violating privacy rules
+        blocked_windows = self.privacy_gate.filter_blocked_windows(visible_windows)
+        active_decision = self.privacy_gate.evaluate(
             app_name=ctx.app_name,
             window_title=ctx.window_title,
             url=ctx.url,
         )
 
-        if not decision.is_allowed:
-            if decision.action == "drop":
-                logger.info(
-                    "🔒 PRIVACY DROP: Ignored capture for [%s] (Rule: %s, Reason: %s)",
-                    ctx.app_name, decision.matched_rule, decision.reason
-                )
-                return None
-            elif decision.action == "redact":
-                logger.info(
-                    "🔒 PRIVACY REDACT: Saving sanitized stub for [%s] (Reason: %s)",
-                    ctx.app_name, decision.reason
-                )
-                now_iso = datetime.now(timezone.utc).isoformat()
-                record = CaptureRecord(
-                    timestamp=now_iso,
-                    app_name=ctx.app_name,
-                    window_title="[REDACTED]",
-                    url=None,
-                    ocr_text="[REDACTED BY PRIVACY GATEKEEPER]",
-                    screenshot_path=None,
-                    phash=hash_str,
-                    width=img.width,
-                    height=img.height,
-                    is_redacted=1,
-                    metadata={"reason": decision.reason, "rule": decision.matched_rule},
-                )
-                record_id = self.storage.save_capture(record)
-                record.id = record_id
-                return record
+        masked_names: list[str] = []
 
-        # 5. Extract OCR text directly from 100% full-resolution image
+        # 4. Handle Privacy Gating Decisions
+        if not active_decision.is_allowed:
+            # Active foreground window is restricted
+            # Check window coverage to differentiate full-screen vs split-screen / windowed mode
+            img_area = max(1, img.width * img.height)
+            win_ratio = 1.0
+            if ctx.bounding_box:
+                l, t, r, b = ctx.bounding_box
+                win_area = max(0, r - l) * max(0, b - t)
+                win_ratio = min(1.0, win_area / img_area)
+
+            # Check if there are other visible windows that are allowed
+            allowed_windows = [
+                w for w in visible_windows
+                if self.privacy_gate.evaluate(w.app_name, w.window_title).is_allowed
+            ]
+
+            # If the restricted app covers >= 85% of screen or no allowed windows are visible, drop or redact stub
+            if win_ratio >= 0.85 or not allowed_windows:
+                if active_decision.action == "drop":
+                    logger.info(
+                        "🔒 PRIVACY DROP: Ignored capture for [%s] (Rule: %s, Reason: %s)",
+                        ctx.app_name, active_decision.matched_rule, active_decision.reason
+                    )
+                    return None
+                elif active_decision.action == "redact":
+                    logger.info(
+                        "🔒 PRIVACY REDACT: Saving sanitized stub for [%s] (Reason: %s)",
+                        ctx.app_name, active_decision.reason
+                    )
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    record = CaptureRecord(
+                        timestamp=now_iso,
+                        app_name=ctx.app_name,
+                        window_title="[REDACTED]",
+                        url=None,
+                        ocr_text="[REDACTED BY PRIVACY GATEKEEPER]",
+                        screenshot_path=None,
+                        phash="",
+                        width=img.width,
+                        height=img.height,
+                        is_redacted=1,
+                        metadata={"reason": active_decision.reason, "rule": active_decision.matched_rule},
+                    )
+                    record_id = self.storage.save_capture(record)
+                    record.id = record_id
+                    return record
+            else:
+                # SPATIAL RESCUE (Split-Screen / Windowed Mode):
+                # Active window is restricted (e.g. Discord), but work windows (e.g. VS Code) are visible side-by-side!
+                topmost_allowed = allowed_windows[0]
+                original_active = ctx.app_name
+                ctx = WindowContext(
+                    hwnd=topmost_allowed.hwnd,
+                    process_id=topmost_allowed.process_id,
+                    app_name=topmost_allowed.app_name,
+                    window_title=topmost_allowed.window_title,
+                    url=None,
+                    bounding_box=topmost_allowed.bounding_box,
+                    is_browser=topmost_allowed.app_name.lower() in ("chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"),
+                )
+                logger.info(
+                    "🔒 SPATIAL RESCUE: Active [%s] is blocked, but [%s] is visible. Masking [%s] and preserving [%s]!",
+                    original_active, ctx.app_name, original_active, ctx.app_name
+                )
+
+        # 5. Apply Spatial Window Masking (The "Blackout Curtain")
+        # Paint opaque solid black over all blocked window rectangles before OCR runs
+        if blocked_windows:
+            img, masked_count = self.capturer.redact_blocked_windows(img, blocked_windows, stamp_badge=False)
+            masked_names = [getattr(w, "app_name", "Unknown") for w, _ in blocked_windows]
+            logger.debug(
+                "🔒 SPATIAL PRIVACY: Masked %d restricted window(s) (%s) on screen.",
+                masked_count, ", ".join(set(masked_names))
+            )
+
+        # 6. Check for visual change on the masked image
+        has_changed, distance, hash_str = self.change_detector.evaluate_change(img)
+        if not has_changed and not force:
+            logger.debug(
+                "Tick: No visual change detected (dist=%d <= thresh=%d)",
+                distance, self.config.capture.hash_threshold
+            )
+            return None
+
+        # 7. Extract OCR text directly from 100% full-resolution image
+        # Masked regions are pure black pixels, guaranteeing 0 OCR characters leaked
         ocr_start = time.perf_counter()
         ocr_text = self.ocr_engine.extract_text(img)
         ocr_duration_ms = (time.perf_counter() - ocr_start) * 1000
 
-        # 6. Save lightweight downscaled preview (e.g. 720p) to disk to save space
+        # 8. Save preview image to disk
+        # If any windows were masked, stamp sleek privacy badge on the saved preview
         now = datetime.now(timezone.utc)
         ts_slug = now.strftime("%Y%m%d_%H%M%S_%f")[:19]
         fmt_ext = "jpg" if self.config.capture.image_format.lower() in ("jpg", "jpeg") else "webp"
         filename = f"{ts_slug}_{hash_str[:8]}.{fmt_ext}"
         screenshot_file = self.screenshots_dir / filename
-        saved_path, thumb_w, thumb_h = self.capturer.save_image(img, screenshot_file, downscale_for_storage=True)
 
-        # 7. Persist to SQLite & FTS5
+        preview_img = img
+        if blocked_windows:
+            preview_img = img.copy()
+            self.capturer.redact_blocked_windows(preview_img, blocked_windows, stamp_badge=True)
+
+        saved_path, thumb_w, thumb_h = self.capturer.save_image(preview_img, screenshot_file, downscale_for_storage=True)
+
+        # 9. Persist to SQLite & FTS5
         record = CaptureRecord(
             timestamp=now.isoformat(),
             app_name=ctx.app_name,
@@ -148,26 +210,29 @@ class CaptureEngine:
             phash=hash_str,
             width=img.width,
             height=img.height,
-            is_redacted=0,
+            is_redacted=1 if (blocked_windows and not ocr_text.strip()) else 0,
             metadata={
                 "change_distance": distance,
                 "ocr_duration_ms": round(ocr_duration_ms, 2),
                 "process_id": ctx.process_id,
                 "native_dimensions": f"{img.width}x{img.height}",
                 "storage_dimensions": f"{thumb_w}x{thumb_h}",
+                "spatial_masked_windows": list(set(masked_names)),
+                "is_spatially_masked": bool(blocked_windows),
             },
         )
         record_id = self.storage.save_capture(record)
         record.id = record_id
 
         logger.info(
-            "📸 CAPTURE #%d: App='%s' | Title='%.40s...' | URL=%s | OCR=%d chars (%.1fms)",
+            "📸 CAPTURE #%d: App='%s' | Title='%.40s...' | URL=%s | OCR=%d chars (%.1fms)%s",
             record_id,
             ctx.app_name,
             ctx.window_title,
             ctx.url or "None",
             len(ocr_text),
             ocr_duration_ms,
+            f" [MASKED: {', '.join(set(masked_names))}]" if masked_names else "",
         )
 
         for cb in self._step_callbacks:

@@ -134,6 +134,8 @@ class MemVisionRequestHandler(SimpleHTTPRequestHandler):
                 "url": r.url,
                 "ocr_snippet": r.ocr_text[:280] if r.ocr_text else "",
                 "screenshot_path": r.screenshot_path,
+                "is_spatially_masked": bool((r.metadata or {}).get("is_spatially_masked")),
+                "spatial_masked_windows": (r.metadata or {}).get("spatial_masked_windows", []),
             }
             for r in records
         ]
@@ -154,6 +156,8 @@ class MemVisionRequestHandler(SimpleHTTPRequestHandler):
                 "url": r.url,
                 "ocr_snippet": r.ocr_text[:280] if r.ocr_text else "",
                 "screenshot_path": r.screenshot_path,
+                "is_spatially_masked": bool((r.metadata or {}).get("is_spatially_masked")),
+                "spatial_masked_windows": (r.metadata or {}).get("spatial_masked_windows", []),
             }
             for r in records
         ]

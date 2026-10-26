@@ -65,9 +65,20 @@ class WindowContext:
     is_browser: bool = False
 
 
+@dataclass
+class VisibleWindow:
+    """Represents a visible desktop window with spatial coordinates."""
+    hwnd: int
+    process_id: int
+    app_name: str
+    window_title: str
+    bounding_box: Tuple[int, int, int, int]  # (left, top, right, bottom) in virtual screen coordinates
+
+
 class ContextExtractor:
     """
-    Extracts rich desktop context from the active foreground window.
+    Extracts rich desktop context from the active foreground window
+    and visible top-level windows for spatial privacy masking.
     Uses Win32 APIs and UI Automation for browser URL extraction.
     """
 
@@ -77,6 +88,7 @@ class ContextExtractor:
         self._last_title: Optional[str] = None
         self._last_url: Optional[str] = None
         self._last_url_time: float = 0.0
+        self._pid_name_cache: dict[int, Tuple[str, float]] = {}
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="memvision_context",
@@ -178,6 +190,114 @@ class ContextExtractor:
                 bounding_box=None,
                 is_browser=False,
             )
+
+    def _get_process_name(self, pid: int) -> str:
+        """Cached lookup of process name by PID with a 5-second TTL."""
+        if not pid:
+            return "unknown"
+        now = time.time()
+        cached = self._pid_name_cache.get(pid)
+        if cached and (now - cached[1]) < 5.0:
+            return cached[0]
+        try:
+            name = psutil.Process(pid).name()
+        except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
+            name = "unknown"
+        self._pid_name_cache[pid] = (name, now)
+        return name
+
+    def _get_visible_windows_worker(self) -> list[VisibleWindow]:
+        """
+        Enumerates all visible, uncloaked, non-minimized desktop windows in Z-order.
+        Executes on the worker thread attached to the interactive desktop.
+        """
+        u32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        dwmapi = getattr(ctypes.windll, "dwmapi", None)
+        DWMWA_CLOAKED = 14
+
+        # Retrieve thread desktop handle
+        tid = kernel32.GetCurrentThreadId()
+        u32.GetThreadDesktop.restype = wintypes.HANDLE
+        u32.GetThreadDesktop.argtypes = [wintypes.DWORD]
+        hdesk = u32.GetThreadDesktop(tid)
+
+        windows: list[VisibleWindow] = []
+
+        def enum_handler(hwnd: int, lparam: int) -> bool:
+            try:
+                # 1. Must be visible and not minimized
+                if not u32.IsWindowVisible(hwnd) or u32.IsIconic(hwnd):
+                    return True
+
+                # 2. Check cloaking (virtual desktops, suspended background apps)
+                if dwmapi:
+                    cloaked = wintypes.DWORD()
+                    if dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, ctypes.byref(cloaked), ctypes.sizeof(cloaked)) == 0:
+                        if cloaked.value != 0:
+                            return True
+
+                # 3. Geometry check
+                rect = wintypes.RECT()
+                if not u32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                    return True
+                width = rect.right - rect.left
+                height = rect.bottom - rect.top
+                if width <= 30 or height <= 30:
+                    return True
+
+                # 4. Process Name
+                pid = wintypes.DWORD()
+                u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                proc_name = self._get_process_name(pid.value)
+
+                # 5. Window Title
+                length = u32.GetWindowTextLengthW(hwnd)
+                title = ""
+                if length > 0:
+                    buf = ctypes.create_unicode_buffer(length + 1)
+                    u32.GetWindowTextW(hwnd, buf, length + 1)
+                    title = buf.value
+
+                # Filter out system desktop backgrounds, taskbar shells, and tray crumbs
+                if title == "Program Manager" or proc_name in ("dwm.exe",):
+                    return True
+                if not title and proc_name in ("explorer.exe", "dwm.exe", "svchost.exe", "unknown"):
+                    return True
+
+                windows.append(
+                    VisibleWindow(
+                        hwnd=hwnd,
+                        process_id=pid.value,
+                        app_name=proc_name,
+                        window_title=title,
+                        bounding_box=(rect.left, rect.top, rect.right, rect.bottom),
+                    )
+                )
+            except Exception as e:
+                logger.debug("Error inspecting window %s: %s", hwnd, e)
+            return True
+
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        cb = WNDENUMPROC(enum_handler)
+        if hdesk:
+            u32.EnumDesktopWindows(hdesk, cb, 0)
+        else:
+            u32.EnumWindows(cb, 0)
+
+        return windows
+
+    def get_visible_windows(self) -> list[VisibleWindow]:
+        """
+        Retrieves all visible top-level windows with their spatial coordinates in Z-order.
+        Dispatches to worker thread to ensure attachment to interactive desktop.
+        """
+        try:
+            future = self._executor.submit(self._get_visible_windows_worker)
+            return future.result(timeout=2.0)
+        except Exception as e:
+            logger.debug("Visible windows extraction error: %s", e)
+            return []
 
     def _extract_browser_url(self, hwnd: int, app_name: str, title: str) -> Optional[str]:
         """
