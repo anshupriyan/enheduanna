@@ -292,6 +292,10 @@ def main() -> None:
     # open command
     subparsers.add_parser("open", help="Open the screenshots folder in Windows Explorer")
 
+    # latest command
+    latest_parser = subparsers.add_parser("latest", help="Show the most recent capture")
+    latest_parser.add_argument("--view", action="store_true", help="Open the screenshot image in default photo viewer")
+
     # ui / web command
     ui_parser = subparsers.add_parser("ui", aliases=["web"], help="Launch local glassmorphic web dashboard")
     ui_parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind to")
