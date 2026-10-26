@@ -39,7 +39,7 @@ class MCPServer:
         return [
             {
                 "name": "search_desktop_memory",
-                "description": "Searches the user's desktop memory for keywords across OCR text, window titles, URLs, and active applications.",
+                "description": "Searches the user's desktop memory for keywords across OCR text, window titles, URLs, and active applications. Supports optional time bounding (since/until) and app filtering for rapid retrieval.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -51,6 +51,18 @@ class MCPServer:
                             "type": "integer",
                             "description": "Maximum number of memory records to return (default: 5).",
                             "default": 5,
+                        },
+                        "since": {
+                            "type": "string",
+                            "description": "Optional ISO 8601 timestamp to retrieve memories recorded on or after this time.",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "Optional ISO 8601 timestamp to retrieve memories recorded on or before this time.",
+                        },
+                        "app_name": {
+                            "type": "string",
+                            "description": "Optional application process name filter (e.g., 'code.exe', 'chrome.exe').",
                         },
                     },
                     "required": ["query"],
@@ -99,7 +111,10 @@ class MCPServer:
         if name == "search_desktop_memory":
             query = args.get("query", "")
             limit = int(args.get("limit", 5))
-            records = self.storage.search(query, limit=limit)
+            since = args.get("since")
+            until = args.get("until")
+            app_name = args.get("app_name")
+            records = self.storage.search(query, limit=limit, since=since, until=until, app_name=app_name)
             return [
                 {
                     "id": r.id,

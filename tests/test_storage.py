@@ -63,7 +63,25 @@ def test_storage_crud_and_fts():
         assert len(code_results) >= 1
         assert code_results[0].id == id2
 
-        # 7. Check stats
+        # 7. Test app_name filtering
+        chrome_only = storage.search(app_name="chrome.exe")
+        assert len(chrome_only) == 1
+        assert chrome_only[0].app_name == "chrome.exe"
+
+        code_only = storage.search(app_name="code.exe")
+        assert len(code_only) == 1
+        assert code_only[0].app_name == "code.exe"
+
+        # 8. Test combined keyword and app_name filter
+        filtered_search = storage.search("privacy-first", app_name="chrome.exe")
+        assert len(filtered_search) == 1
+        assert filtered_search[0].id == id1
+
+        # Negative filter test: keyword in chrome record, but filtered to code.exe
+        no_match = storage.search("privacy-first", app_name="code.exe")
+        assert len(no_match) == 0
+
+        # 9. Check stats
         stats = storage.get_stats()
         assert stats["total_captures"] == 2
         assert stats["redacted_captures"] == 0

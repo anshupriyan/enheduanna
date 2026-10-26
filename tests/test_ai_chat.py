@@ -41,6 +41,18 @@ def test_ai_chat_and_mcp_retrieval():
         assert len(retrieved) >= 1
         assert "meta.ai" in (retrieved[0].url or "")
 
+        # Test query filter extraction
+        q_clean, q_since, q_until, q_app = AIChatEngine._extract_query_filters("what was I doing in VS Code in the past 2 hours?")
+        assert q_app == "code"
+        assert q_since is not None
+        assert "vs code" not in q_clean.lower()
+        assert "past 2 hours" not in q_clean.lower()
+
+        # Test context retrieval with app pruning
+        retrieved_code = chat.retrieve_context("what was I doing in VS Code in the past 1 hour?")
+        assert len(retrieved_code) >= 1
+        assert retrieved_code[0].app_name == "code.exe"
+
         # Test local fallback response (isolated from live network)
         chat.get_api_credentials = lambda: {"provider": None, "api_key": "", "model": "local", "base_url": ""}
         resp = chat.ask("What was that Meta Model API link?")

@@ -87,6 +87,8 @@ class MemoryStorage:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_timestamp ON captures(timestamp);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_app ON captures(app_name);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_phash ON captures(phash);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_app_time ON captures(app_name, timestamp DESC);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_time_desc ON captures(timestamp DESC);")
 
             # Setup FTS5 full-text search table if supported
             if self.enable_fts:
@@ -163,47 +165,102 @@ class MemoryStorage:
             conn.commit()
             return record.id
 
-    def search(self, query: str, limit: int = 20) -> List[CaptureRecord]:
+    def search(
+        self,
+        query: str = "",
+        limit: int = 20,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        app_name: Optional[str] = None,
+    ) -> List[CaptureRecord]:
         """
         Search memory for keywords in app_name, window_title, url, or OCR text.
+        Supports time bounding (since/until) and application filtering (app_name)
+        accelerated by composite B-Tree indexes.
         Uses FTS5 ranking when available, falling back to LIKE.
         """
         results: List[CaptureRecord] = []
-        if not query or not query.strip():
-            return self.get_recent(limit=limit)
-
-        clean_query = query.strip()
+        clean_query = query.strip() if query else ""
 
         with self.connection() as conn:
+            # 1. If no search keyword, execute direct indexed query with filters
+            if not clean_query:
+                where_clauses = []
+                params: List[Any] = []
+                if since:
+                    where_clauses.append("timestamp >= ?")
+                    params.append(since)
+                if until:
+                    where_clauses.append("timestamp <= ?")
+                    params.append(until)
+                if app_name:
+                    where_clauses.append("app_name LIKE ?")
+                    params.append(f"%{app_name}%")
+
+                where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+                sql = f"SELECT * FROM captures {where_sql} ORDER BY timestamp DESC LIMIT ?;"
+                params.append(limit)
+                for row in conn.execute(sql, params):
+                    results.append(self._row_to_record(row))
+                return results
+
+            # 2. FTS5 query with time & app filters
             if self.enable_fts:
                 try:
-                    # Sanitize FTS query for boolean tokens
                     safe_query = f'"{clean_query}"' if not any(c in clean_query for c in '*":') else clean_query
-                    sql = """
+                    where_clauses = ["captures_fts MATCH ?"]
+                    params = [safe_query]
+
+                    if since:
+                        where_clauses.append("c.timestamp >= ?")
+                        params.append(since)
+                    if until:
+                        where_clauses.append("c.timestamp <= ?")
+                        params.append(until)
+                    if app_name:
+                        where_clauses.append("c.app_name LIKE ?")
+                        params.append(f"%{app_name}%")
+
+                    where_sql = " AND ".join(where_clauses)
+                    sql = f"""
                         SELECT c.* FROM captures c
                         JOIN captures_fts f ON c.id = f.rowid
-                        WHERE captures_fts MATCH ?
+                        WHERE {where_sql}
                         ORDER BY rank
                         LIMIT ?;
                     """
-                    for row in conn.execute(sql, (safe_query, limit)):
+                    params.append(limit)
+                    for row in conn.execute(sql, params):
                         results.append(self._row_to_record(row))
                     return results
                 except sqlite3.OperationalError as e:
                     logger.debug("FTS5 search query error (%s); falling back to LIKE query.", e)
 
-            # Fallback LIKE query
-            sql = """
-                SELECT * FROM captures
-                WHERE app_name LIKE ?
-                   OR window_title LIKE ?
-                   OR url LIKE ?
-                   OR ocr_text LIKE ?
-                ORDER BY id DESC
+            # 3. Fallback LIKE query with time & app filters
+            pattern = f"%{clean_query}%"
+            where_clauses = [
+                "(c.app_name LIKE ? OR c.window_title LIKE ? OR c.url LIKE ? OR c.ocr_text LIKE ?)"
+            ]
+            params = [pattern, pattern, pattern, pattern]
+            if since:
+                where_clauses.append("c.timestamp >= ?")
+                params.append(since)
+            if until:
+                where_clauses.append("c.timestamp <= ?")
+                params.append(until)
+            if app_name:
+                where_clauses.append("c.app_name LIKE ?")
+                params.append(f"%{app_name}%")
+
+            where_sql = " AND ".join(where_clauses)
+            sql = f"""
+                SELECT c.* FROM captures c
+                WHERE {where_sql}
+                ORDER BY c.timestamp DESC
                 LIMIT ?;
             """
-            pattern = f"%{clean_query}%"
-            for row in conn.execute(sql, (pattern, pattern, pattern, pattern, limit)):
+            params.append(limit)
+            for row in conn.execute(sql, params):
                 results.append(self._row_to_record(row))
 
         return results

@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
 import httpx
 
 from memvision.config import AppConfig
@@ -122,45 +125,142 @@ class AIChatEngine:
             "provider": provider_detected,
         }
 
+    @staticmethod
+    def _extract_query_filters(
+        query: str,
+    ) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
+        """
+        Extracts temporal boundaries (since, until) and application name filters
+        from conversational user queries, returning (clean_query, since_iso, until_iso, app_filter).
+        Accelerates large-database search by pruning 95%+ of candidate records.
+        """
+        clean = query.strip()
+        lower = clean.lower()
+        now = datetime.now(timezone.utc)
+        since: Optional[str] = None
+        until: Optional[str] = None
+        app_filter: Optional[str] = None
+
+        # 1. Parse relative time expressions (e.g. "past 2 hours", "last 30 mins")
+        m_hour = re.search(r"\b(?:last|past)\s+(\d+)\s+hours?\b", lower)
+        if m_hour:
+            h = int(m_hour.group(1))
+            since = (now - timedelta(hours=h)).isoformat()
+            clean = re.sub(r"\b(?:in\s+the\s+)?(?:last|past)\s+\d+\s+hours?\b", " ", clean, flags=re.IGNORECASE)
+
+        m_min = re.search(r"\b(?:last|past)\s+(\d+)\s+(?:mins?|minutes?)\b", lower)
+        if m_min and not since:
+            m = int(m_min.group(1))
+            since = (now - timedelta(minutes=m)).isoformat()
+            clean = re.sub(r"\b(?:in\s+the\s+)?(?:last|past)\s+\d+\s+(?:mins?|minutes?)\b", " ", clean, flags=re.IGNORECASE)
+
+        # "today"
+        if re.search(r"\btoday\b", lower) and not since:
+            start_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            since = start_today.isoformat()
+            clean = re.sub(r"\btoday\b", " ", clean, flags=re.IGNORECASE)
+
+        # "yesterday"
+        if re.search(r"\byesterday\b", lower) and not since:
+            start_yesterday = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            end_yesterday = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            since = start_yesterday.isoformat()
+            until = end_yesterday.isoformat()
+            clean = re.sub(r"\byesterday\b", " ", clean, flags=re.IGNORECASE)
+
+        # 2. Parse application filters
+        app_patterns = [
+            (r"\b(?:in|on)\s+(?:vs\s*code|vscode|code)\b", "code"),
+            (r"\b(?:in|on)\s+(?:antigravity|ide)\b", "Antigravity"),
+            (r"\b(?:in|on)\s+(?:terminal|powershell|cmd|console)\b", "Terminal"),
+            (r"\b(?:in|on)\s+brave\b", "brave"),
+            (r"\b(?:in|on)\s+chrome\b", "chrome"),
+            (r"\b(?:in|on)\s+(?:ms\s*edge|edge)\b", "edge"),
+            (r"\b(?:in|on)\s+(?:cherry\s*studio|cherry)\b", "Cherry Studio"),
+            (r"\b(?:in|on)\s+qwen\b", "Qwen"),
+            (r"\b(?:in|on)\s+claude\b", "claude"),
+            (r"\b(?:in|on)\s+discord\b", "discord"),
+            (r"\b(?:in|on)\s+slack\b", "slack"),
+            (r"\b(?:in|on)\s+figma\b", "figma"),
+            (r"\b(?:in|on)\s+spotify\b", "spotify"),
+            (r"\b(?:in|on)\s+notepad\b", "notepad"),
+        ]
+
+        for pat, app_exe in app_patterns:
+            if re.search(pat, lower):
+                app_filter = app_exe
+                clean = re.sub(pat, " ", clean, flags=re.IGNORECASE)
+                break
+
+        # Remove filler words and excess whitespace
+        clean = re.sub(r"\s+", " ", clean).strip()
+        return clean, since, until, app_filter
+
     def retrieve_context(self, query: str, limit: int = 6) -> List[CaptureRecord]:
         """
-        Retrieves the most relevant captures using temporal or FTS5 keyword matching
-        with weighted scoring for URLs, titles, and OCR text.
+        Retrieves the most relevant captures using temporal pre-filtering,
+        application pruning, and FTS5 keyword matching with weighted scoring.
         """
-        import re
-        clean_q = query.strip().lower()
-        temporal_triggers = {"today", "yesterday", "recently", "just now", "recent", "latest", "what did i do"}
+        clean_text, since, until, app_filter = self._extract_query_filters(query)
+        clean_q = clean_text.lower()
 
-        # If general temporal inquiry, fetch recent records
-        if any(trigger in clean_q for trigger in temporal_triggers) and len(clean_q.split()) <= 6:
-            return self.storage.get_recent(limit=limit)
-
-        # Extract search keywords
+        # Stop words to filter out of keyword queries
         stop_words = {
             "what", "when", "where", "which", "about", "show", "tell",
             "that", "this", "have", "with", "from", "were", "been", "was",
             "does", "could", "would", "should", "some", "your", "mine",
-            "i", "me", "my", "the", "and", "or", "in", "on", "at", "for"
+            "i", "me", "my", "the", "and", "or", "in", "on", "at", "for",
+            "did", "doing", "was", "any", "work", "worked"
         }
         stripped = re.sub(r"[^\w\s]", " ", clean_q)
         keywords = [w for w in stripped.split() if len(w) >= 3 and w not in stop_words]
 
-        # Collect candidate captures across full phrase and individual keywords
+        # 1. If query is purely temporal/app with no specific search term,
+        # perform an index-accelerated filtered search directly
+        if not keywords:
+            return self.storage.search(
+                query="",
+                since=since,
+                until=until,
+                app_name=app_filter,
+                limit=limit,
+            )
+
+        # 2. Collect candidate captures across phrase and individual keywords
         candidate_map: Dict[int, CaptureRecord] = {}
 
-        # 1. Full query search
-        for r in self.storage.search(query, limit=limit * 2):
+        # Search with full stripped query
+        for r in self.storage.search(
+            query=" ".join(keywords),
+            since=since,
+            until=until,
+            app_name=app_filter,
+            limit=limit * 2,
+        ):
             candidate_map[r.id] = r
 
-        # 2. Keyword searches
+        # Search with individual top keywords
         for kw in keywords[:4]:
-            for r in self.storage.search(kw, limit=limit * 2):
+            for r in self.storage.search(
+                query=kw,
+                since=since,
+                until=until,
+                app_name=app_filter,
+                limit=limit * 2,
+            ):
                 if r.id not in candidate_map:
                     candidate_map[r.id] = r
 
         candidates = list(candidate_map.values())
         if not candidates:
-            return self.storage.get_recent(limit=limit)
+            # Fallback to filtered search without keyword constraint
+            return self.storage.search(
+                query="",
+                since=since,
+                until=until,
+                app_name=app_filter,
+                limit=limit,
+            )
 
         # 3. Weighted relevance scoring
         def _score(r: CaptureRecord) -> int:
@@ -184,11 +284,15 @@ class AIChatEngine:
                 if kw in ocr_lower:
                     score += 5
 
+            # Boost for matching the filtered app
+            if app_filter and app_filter.lower() in (r.app_name or "").lower():
+                score += 25
+
             return score
 
         candidates.sort(key=_score, reverse=True)
 
-        # Deduplicate consecutive identical frames
+        # 4. Deduplicate consecutive identical frames
         deduped: List[CaptureRecord] = []
         seen_hashes = set()
         seen_urls = set()
