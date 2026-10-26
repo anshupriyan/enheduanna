@@ -63,8 +63,17 @@ class AIChatEngine:
             base_url = "https://api.groq.com/openai/v1"
             model = "llama-3.3-70b-versatile"
             provider_detected = "groq"
-        elif os.environ.get("OPENROUTER_API_KEY"):
-            api_key = os.environ["OPENROUTER_API_KEY"]
+        elif (
+            os.environ.get("OPENROUTER_API_KEY")
+            or os.environ.get("OMNIROUTE_API_KEY")
+            or os.environ.get("OMNI_ROUTE_API_KEY")
+        ):
+            api_key = (
+                os.environ.get("OPENROUTER_API_KEY")
+                or os.environ.get("OMNIROUTE_API_KEY")
+                or os.environ.get("OMNI_ROUTE_API_KEY")
+                or ""
+            )
             base_url = "https://openrouter.ai/api/v1"
             model = "meta-llama/llama-3.3-70b-instruct"
             provider_detected = "openrouter"
@@ -231,6 +240,8 @@ class AIChatEngine:
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/meta-hackathon/mem-vision-mcp",
+            "X-Title": "mem-vision-mcp",
         }
         payload = {
             "model": model,
