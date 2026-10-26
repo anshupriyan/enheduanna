@@ -1,0 +1,37 @@
+# mem-vision-mcp: Core Dependencies
+# All dependencies are 100% open-source with permissive licenses (MIT, BSD, Apache 2.0, PSF).
+# Compliant with Meta Hackathon open-source requirements.
+
+# Screen Capture (MIT)
+# Fast, lightweight screen capture using native Windows GDI/DirectX
+mss>=10.2.0
+
+# Image Processing (HPND / MIT-like)
+# Screenshot manipulation, downscaling, JPEG/WebP compression
+pillow>=10.0.0
+
+# Perceptual Hashing & Change Detection (BSD-2-Clause)
+# Difference hashing (dhash) and perceptual hashing (phash)
+imagehash>=4.3.1
+numpy>=1.26.0
+
+# Windows System & Process Context (BSD-3-Clause & PSF)
+# Extract active process name, PID, memory usage, CPU monitoring
+psutil>=5.9.0
+pywin32>=306
+
+# Windows UI Automation (Apache-2.0)
+# Extract browser active tab URL (Chrome, Edge, Brave, Firefox) via UI Automation
+uiautomation>=2.0.19
+
+# Windows Native OCR (MIT)
+# Official Microsoft WinRT projections for hardware-accelerated on-device OCR
+# Built into Windows 10/11 - zero network, zero external binaries, completely offline
+winrt-Windows.Media.Ocr>=4.0.0
+winrt-Windows.Graphics.Imaging>=4.0.0
+winrt-Windows.Storage.Streams>=4.0.0
+winrt-Windows.Globalization>=4.0.0
+
+# Fallback OCR (Apache-2.0)
+# Optional fallback if Windows native WinRT OCR is unavailable
+pytesseract>=0.3.10

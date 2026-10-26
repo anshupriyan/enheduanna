@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Data & local runtime artifacts
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/screenshots/*
+!data/screenshots/.gitkeep
+
+# IDE & Editor caches
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Antigravity artifacts
+.agents/

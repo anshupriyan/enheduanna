@@ -1,0 +1,62 @@
+{
+  "mode": "blocklist",
+  "action_on_block": "drop",
+  "blocked_apps": [
+    "1password.exe",
+    "1password7.exe",
+    "bitwarden.exe",
+    "keepass.exe",
+    "keepassxc.exe",
+    "lastpass.exe",
+    "dashlane.exe",
+    "enpass.exe",
+    "credentialui.exe",
+    "consent.exe",
+    "securityhealthsystray.exe",
+    "authenticator.exe",
+    "authy.exe"
+  ],
+  "blocked_urls": [
+    "*paypal.com*",
+    "*chase.com*",
+    "*bankofamerica.com*",
+    "*wellsfargo.com*",
+    "*citi.com*",
+    "*fidelity.com*",
+    "*vanguard.com*",
+    "*schwab.com*",
+    "*coinbase.com*",
+    "*binance.com*",
+    "*login.live.com*",
+    "*accounts.google.com/signin*",
+    "*appleid.apple.com*",
+    "*auth0.com*",
+    "*okta.com*",
+    "chrome://settings*",
+    "chrome://password-manager*",
+    "edge://settings*",
+    "edge://wallet*",
+    "brave://settings*",
+    "brave://wallet*",
+    "about:preferences*",
+    "about:logins*"
+  ],
+  "blocked_window_titles": [
+    "*Incognito*",
+    "*InPrivate*",
+    "*Private Browsing*",
+    "*1Password*",
+    "*Bitwarden*",
+    "*KeePass*",
+    "*Master Password*",
+    "*Enter PIN*",
+    "*Payment Method*",
+    "*Enter Password*"
+  ],
+  "allowed_apps": [
+    "*"
+  ],
+  "allowed_urls": [
+    "*"
+  ]
+}
