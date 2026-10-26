@@ -53,7 +53,14 @@ class AIChatEngine:
         model = ""
         provider_detected = "meta"
 
-        if os.environ.get("OPENAI_API_KEY"):
+        if os.environ.get("ANTHROPIC_BASE_URL") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+            api_key = os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY", "")
+            base_url = (os.environ.get("ANTHROPIC_BASE_URL") or "http://localhost:20128").rstrip("/")
+            if not base_url.endswith("/v1"):
+                base_url = f"{base_url}/v1"
+            model = os.environ.get("ANTHROPIC_MODEL") or "free-stack"
+            provider_detected = "omniroute"
+        elif os.environ.get("OPENAI_API_KEY"):
             api_key = os.environ["OPENAI_API_KEY"]
             base_url = "https://api.openai.com/v1"
             model = "gpt-4o-mini"
@@ -117,7 +124,8 @@ class AIChatEngine:
 
     def retrieve_context(self, query: str, limit: int = 6) -> List[CaptureRecord]:
         """
-        Retrieves the most relevant captures using temporal or FTS5 keyword matching.
+        Retrieves the most relevant captures using temporal or FTS5 keyword matching
+        with weighted scoring for URLs, titles, and OCR text.
         """
         import re
         clean_q = query.strip().lower()
@@ -125,36 +133,76 @@ class AIChatEngine:
 
         # If general temporal inquiry, fetch recent records
         if any(trigger in clean_q for trigger in temporal_triggers) and len(clean_q.split()) <= 6:
-            records = self.storage.get_recent(limit=limit * 2)
-        else:
-            # 1. Try full phrase / query search
-            records = self.storage.search(query, limit=limit * 2)
+            return self.storage.get_recent(limit=limit)
 
-            # 2. If no direct match, extract significant keywords and search
-            if not records:
-                stop_words = {
-                    "what", "when", "where", "which", "about", "show", "tell",
-                    "that", "this", "have", "with", "from", "were", "been",
-                    "does", "could", "would", "should", "some", "your", "mine",
-                    "i", "me", "my", "was", "the", "and", "or", "in", "on", "at"
-                }
-                stripped = re.sub(r"[^\w\s]", " ", clean_q)
-                keywords = [w for w in stripped.split() if len(w) > 2 and w not in stop_words]
+        # Extract search keywords
+        stop_words = {
+            "what", "when", "where", "which", "about", "show", "tell",
+            "that", "this", "have", "with", "from", "were", "been", "was",
+            "does", "could", "would", "should", "some", "your", "mine",
+            "i", "me", "my", "the", "and", "or", "in", "on", "at", "for"
+        }
+        stripped = re.sub(r"[^\w\s]", " ", clean_q)
+        keywords = [w for w in stripped.split() if len(w) >= 3 and w not in stop_words]
 
+        # Collect candidate captures across full phrase and individual keywords
+        candidate_map: Dict[int, CaptureRecord] = {}
+
+        # 1. Full query search
+        for r in self.storage.search(query, limit=limit * 2):
+            candidate_map[r.id] = r
+
+        # 2. Keyword searches
+        for kw in keywords[:4]:
+            for r in self.storage.search(kw, limit=limit * 2):
+                if r.id not in candidate_map:
+                    candidate_map[r.id] = r
+
+        candidates = list(candidate_map.values())
+        if not candidates:
+            return self.storage.get_recent(limit=limit)
+
+        # 3. Weighted relevance scoring
+        def _score(r: CaptureRecord) -> int:
+            score = 0
+            # Strong boost for captures with active URLs
+            if r.url:
+                score += 30
                 for kw in keywords:
-                    kw_records = self.storage.search(kw, limit=limit)
-                    if kw_records:
-                        records.extend(kw_records)
-                    if len(records) >= limit * 2:
-                        break
+                    if kw in r.url.lower():
+                        score += 35
 
-        # Deduplicate consecutive frames of the same app and identical text
+            # Boost for keyword matches in window title
+            title_lower = (r.window_title or "").lower()
+            for kw in keywords:
+                if kw in title_lower:
+                    score += 20
+
+            # Boost for keyword matches in OCR text
+            ocr_lower = (r.ocr_text or "").lower()
+            for kw in keywords:
+                if kw in ocr_lower:
+                    score += 5
+
+            return score
+
+        candidates.sort(key=_score, reverse=True)
+
+        # Deduplicate consecutive identical frames
         deduped: List[CaptureRecord] = []
         seen_hashes = set()
-        for r in records:
+        seen_urls = set()
+        for r in candidates:
+            # If same URL already in results, skip duplicate tab state
+            if r.url and r.url in seen_urls:
+                continue
             if r.phash in seen_hashes:
                 continue
+
             seen_hashes.add(r.phash)
+            if r.url:
+                seen_urls.add(r.url)
+
             deduped.append(r)
             if len(deduped) >= limit:
                 break
@@ -239,6 +287,7 @@ class AIChatEngine:
         endpoint = f"{base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",
+            "x-api-key": api_key,
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/meta-hackathon/mem-vision-mcp",
             "X-Title": "mem-vision-mcp",
@@ -254,7 +303,7 @@ class AIChatEngine:
         }
 
         try:
-            with httpx.Client(timeout=45.0) as client:
+            with httpx.Client(timeout=90.0) as client:
                 resp = client.post(endpoint, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
