@@ -51,11 +51,23 @@ class PrivacyConfig:
 
 
 @dataclass
+class AIConfig:
+    provider: str = "meta"                  # "meta", "openai", "ollama", "custom"
+    base_url: str = "https://api.meta.ai/v1"
+    api_key_env: str = "META_API_KEY"
+    model: str = "llama-3.3-70b-instruct"
+    temperature: float = 0.2
+    max_tokens: int = 1024
+    max_context_items: int = 6
+
+
+@dataclass
 class AppConfig:
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     ocr: OCRConfig = field(default_factory=OCRConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
+    ai: AIConfig = field(default_factory=AIConfig)
 
     @classmethod
     def from_json(cls, config_path: str | Path) -> AppConfig:
@@ -73,12 +85,14 @@ class AppConfig:
             ocr_data = data.get("ocr", {})
             storage_data = data.get("storage", {})
             privacy_data = data.get("privacy", {})
+            ai_data = data.get("ai", {})
 
             return cls(
                 capture=CaptureConfig(**capture_data),
                 ocr=OCRConfig(**ocr_data),
                 storage=StorageConfig(**storage_data),
                 privacy=PrivacyConfig(**privacy_data),
+                ai=AIConfig(**ai_data),
             )
         except Exception as e:
             logger.error("Failed to parse config file %s: %s. Using defaults.", path, e)

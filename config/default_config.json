@@ -25,5 +25,14 @@
   "privacy": {
     "config_path": "config/privacy_rules.json",
     "enabled": true
+  },
+  "ai": {
+    "provider": "meta",
+    "base_url": "https://api.meta.ai/v1",
+    "api_key_env": "META_API_KEY",
+    "model": "llama-3.3-70b-instruct",
+    "temperature": 0.2,
+    "max_tokens": 1024,
+    "max_context_items": 6
   }
 }

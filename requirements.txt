@@ -35,3 +35,8 @@ winrt-Windows.Globalization>=4.0.0
 # Fallback OCR (Apache-2.0)
 # Optional fallback if Windows native WinRT OCR is unavailable
 pytesseract>=0.3.10
+
+# AI Client & HTTP Transport (BSD-3-Clause)
+# For Meta Model API, OpenAI, Ollama, and LLM chat completions
+httpx>=0.27.0
+

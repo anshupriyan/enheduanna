@@ -165,6 +165,59 @@ def cmd_latest(args: argparse.Namespace) -> None:
         os.startfile(r.screenshot_path)
 
 
+def cmd_chat(args: argparse.Namespace) -> None:
+    from memvision.ai_chat import AIChatEngine
+    config = load_config(args.config)
+    chat_engine = AIChatEngine(config)
+    creds = chat_engine.get_api_credentials()
+
+    print("=" * 60)
+    print("  💬 mem-vision-mcp AI Memory Chat")
+    print(f"  • Model:    {creds['model']}")
+    print(f"  • Endpoint: {creds['base_url']}")
+    print(f"  • API Key:  {'Configured' if creds['api_key'] else 'Not set (using local retrieval summary)'}")
+    print("  Type 'exit' or 'quit' to leave.")
+    print("=" * 60)
+
+    if args.query:
+        _run_chat_query(chat_engine, args.query)
+        return
+
+    while True:
+        try:
+            user_input = input("\nAsk your memory > ").strip()
+            if not user_input:
+                continue
+            if user_input.lower() in ("exit", "quit", "q"):
+                print("Goodbye!")
+                break
+            _run_chat_query(chat_engine, user_input)
+        except (KeyboardInterrupt, EOFError):
+            print("\nExiting chat.")
+            break
+
+
+def _run_chat_query(engine, query: str) -> None:
+    print(f"\nSearching memory for: \"{query}\"...")
+    resp = engine.ask(query)
+    print(f"\n🤖 Answer ({resp.model_used}):")
+    print("-" * 60)
+    print(resp.answer)
+    print("-" * 60)
+    if resp.citations:
+        print(f"📚 References used ({len(resp.citations)} captures):")
+        for i, c in enumerate(resp.citations, 1):
+            url_str = f" | {c.url}" if c.url else ""
+            print(f"  [{i}] ID #{c.id} | {c.timestamp[:19].replace('T', ' ')} | {c.app_name}{url_str}")
+
+
+def cmd_mcp(args: argparse.Namespace) -> None:
+    from memvision.mcp_server import MCPServer
+    config = load_config(args.config)
+    server = MCPServer(config.storage.database_path)
+    server.run_stdio()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="mem-vision-mcp",
@@ -188,6 +241,13 @@ def main() -> None:
     search_parser = subparsers.add_parser("search", help="Search desktop memory using FTS5")
     search_parser.add_argument("query", help="Keywords to search in window titles, URLs, or OCR text")
     search_parser.add_argument("-l", "--limit", type=int, default=10, help="Max results to return")
+
+    # chat command
+    chat_parser = subparsers.add_parser("chat", help="Chat with your desktop memory using AI")
+    chat_parser.add_argument("query", nargs="?", help="Optional direct question to ask")
+
+    # mcp command
+    subparsers.add_parser("mcp", help="Launch Model Context Protocol (MCP) JSON-RPC stdio server")
 
     # stats command
     subparsers.add_parser("stats", help="Display memory storage statistics")
@@ -214,6 +274,10 @@ def main() -> None:
         cmd_once(args)
     elif args.command == "search":
         cmd_search(args)
+    elif args.command == "chat":
+        cmd_chat(args)
+    elif args.command == "mcp":
+        cmd_mcp(args)
     elif args.command == "stats":
         cmd_stats(args)
     elif args.command == "privacy-test":
