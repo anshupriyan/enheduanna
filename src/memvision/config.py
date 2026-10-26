@@ -18,12 +18,14 @@ logger = logging.getLogger(__name__)
 class CaptureConfig:
     interval_seconds: float = 1.0
     hash_threshold: int = 3
-    hash_algorithm: str = "dhash"  # "dhash", "phash", "ahash"
-    image_format: str = "jpeg"     # "jpeg" or "webp"
-    image_quality: int = 85
-    max_dimension: int = 0         # 0 = 100% full native resolution (no downscaling)
-    monitor_mode: str = "all"      # "all" (all displays) or "primary" (primary display)
+    hash_algorithm: str = "dhash"       # "dhash", "phash", "ahash"
+    image_format: str = "jpeg"          # "jpeg" or "webp"
+    image_quality: int = 80
+    ocr_max_dimension: int = 0          # 0 = 100% full native resolution for OCR
+    storage_max_dimension: int = 1280   # Max dimension for saved screenshot (e.g. 720p/1280px)
+    monitor_mode: str = "all"           # "all" (all displays) or "primary" (primary display)
     capture_active_window_only: bool = False
+    max_dimension: int = 0              # Backwards-compatible alias
 
 
 @dataclass

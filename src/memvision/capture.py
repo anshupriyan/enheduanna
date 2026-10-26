@@ -54,12 +54,17 @@ class ScreenCapturer:
 
     def __init__(
         self,
-        max_dimension: int = 0,
+        ocr_max_dimension: int = 0,
+        storage_max_dimension: int = 1280,
         image_format: str = "jpeg",
-        image_quality: int = 85,
+        image_quality: int = 80,
         monitor_mode: str = "all",
+        max_dimension: Optional[int] = None,
     ):
-        self.max_dimension = max_dimension
+        if max_dimension is not None:
+            ocr_max_dimension = max_dimension
+        self.ocr_max_dimension = ocr_max_dimension
+        self.storage_max_dimension = storage_max_dimension
         self.image_format = image_format.lower()
         self.image_quality = image_quality
         self.monitor_mode = monitor_mode.lower()
@@ -104,43 +109,55 @@ class ScreenCapturer:
 
     def capture(self, bounding_box: Optional[Tuple[int, int, int, int]] = None) -> Image.Image:
         """
-        Capture the screen or a specific bounding box (left, top, right, bottom).
+        Capture the screen in full native resolution for OCR.
         Returns a PIL Image in RGB format.
         """
         try:
             future = self._executor.submit(self._grab_worker, bounding_box)
             raw_img = future.result(timeout=5.0)
-            return self._resize_if_needed(raw_img)
+            return self._resize_if_needed(raw_img, max_dim=self.ocr_max_dimension)
         except Exception as e:
             logger.error("Screen capture failed: %s", e)
             raise RuntimeError(f"Unable to capture screen: {e}") from e
 
-    def _resize_if_needed(self, img: Image.Image) -> Image.Image:
-        """Preserves 100% full native resolution when max_dimension <= 0."""
-        if self.max_dimension <= 0:
+    def _resize_if_needed(self, img: Image.Image, max_dim: int = 0) -> Image.Image:
+        """Preserves 100% full native resolution when max_dim <= 0."""
+        if max_dim <= 0:
             return img
 
         width, height = img.size
-        max_dim = max(width, height)
-        if max_dim > self.max_dimension:
-            scale = self.max_dimension / float(max_dim)
+        longest = max(width, height)
+        if longest > max_dim:
+            scale = max_dim / float(longest)
             new_w = max(1, int(width * scale))
             new_h = max(1, int(height * scale))
             return img.resize((new_w, new_h), Image.Resampling.LANCZOS)
         return img
 
-    def save_image(self, img: Image.Image, output_path: str | Path) -> str:
-        """Save a PIL Image to disk using configured format and compression quality."""
+    def create_storage_thumbnail(self, img: Image.Image, max_dim: Optional[int] = None) -> Image.Image:
+        """
+        Downscales an in-memory image to a lightweight preview (e.g. 720p/1280px) for saving to disk.
+        """
+        target_dim = self.storage_max_dimension if max_dim is None else max_dim
+        return self._resize_if_needed(img, max_dim=target_dim)
+
+    def save_image(self, img: Image.Image, output_path: str | Path, downscale_for_storage: bool = True) -> Tuple[str, int, int]:
+        """
+        Downscales image to storage resolution, compresses, and saves to disk.
+        Returns tuple of (saved_file_path, saved_width, saved_height).
+        """
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        to_save = self.create_storage_thumbnail(img) if downscale_for_storage else img
 
         fmt = "JPEG" if self.image_format in ("jpg", "jpeg") else "WEBP"
         params = {"quality": self.image_quality}
         if fmt == "JPEG":
             params["optimize"] = True
 
-        img.save(out_path, format=fmt, **params)
-        return str(out_path.resolve())
+        to_save.save(out_path, format=fmt, **params)
+        return str(out_path.resolve()), to_save.width, to_save.height
 
     def to_bytes(self, img: Image.Image) -> bytes:
         """Encode image to compressed bytes in-memory."""

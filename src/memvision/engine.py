@@ -32,7 +32,8 @@ class CaptureEngine:
     def __init__(self, config: Optional[AppConfig] = None):
         self.config = config or AppConfig()
         self.capturer = ScreenCapturer(
-            max_dimension=self.config.capture.max_dimension,
+            ocr_max_dimension=self.config.capture.ocr_max_dimension,
+            storage_max_dimension=self.config.capture.storage_max_dimension,
             image_format=self.config.capture.image_format,
             image_quality=self.config.capture.image_quality,
             monitor_mode=self.config.capture.monitor_mode,
@@ -70,7 +71,7 @@ class CaptureEngine:
         Executes a single capture tick.
         Useful for on-demand captures, unit testing, and CLI dry-runs.
         """
-        # 1. Grab screen
+        # 1. Grab screen in 100% full native resolution
         try:
             img = self.capturer.capture()
         except Exception as e:
@@ -123,18 +124,18 @@ class CaptureEngine:
                 record.id = record_id
                 return record
 
-        # 5. Extract OCR text
+        # 5. Extract OCR text directly from 100% full-resolution image
         ocr_start = time.perf_counter()
         ocr_text = self.ocr_engine.extract_text(img)
         ocr_duration_ms = (time.perf_counter() - ocr_start) * 1000
 
-        # 6. Save compressed screenshot to disk
+        # 6. Save lightweight downscaled preview (e.g. 720p) to disk to save space
         now = datetime.now(timezone.utc)
         ts_slug = now.strftime("%Y%m%d_%H%M%S_%f")[:19]
         fmt_ext = "jpg" if self.config.capture.image_format.lower() in ("jpg", "jpeg") else "webp"
         filename = f"{ts_slug}_{hash_str[:8]}.{fmt_ext}"
         screenshot_file = self.screenshots_dir / filename
-        saved_path = self.capturer.save_image(img, screenshot_file)
+        saved_path, thumb_w, thumb_h = self.capturer.save_image(img, screenshot_file, downscale_for_storage=True)
 
         # 7. Persist to SQLite & FTS5
         record = CaptureRecord(
@@ -152,6 +153,8 @@ class CaptureEngine:
                 "change_distance": distance,
                 "ocr_duration_ms": round(ocr_duration_ms, 2),
                 "process_id": ctx.process_id,
+                "native_dimensions": f"{img.width}x{img.height}",
+                "storage_dimensions": f"{thumb_w}x{thumb_h}",
             },
         )
         record_id = self.storage.save_capture(record)
