@@ -23,3 +23,9 @@ data/screenshots/*
 
 # Antigravity artifacts
 .agents/
+
+# Build and test artifacts
+*.egg-info/
+build/
+dist/
+.pytest_cache/

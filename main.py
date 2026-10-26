@@ -219,6 +219,36 @@ def cmd_mcp(args: argparse.Namespace) -> None:
     server.run_stdio()
 
 
+def cmd_ui(args: argparse.Namespace) -> None:
+    from memvision.web_server import run_web_server
+    config = load_config(args.config)
+    run_web_server(config, host=args.host, port=args.port, open_browser=not args.no_browser)
+
+
+def cmd_mcp_config(args: argparse.Namespace) -> None:
+    python_exe = sys.executable
+    server_path = str(Path(__file__).resolve().parent / "src" / "memvision" / "mcp_server.py")
+
+    claude_cfg = {
+        "mcpServers": {
+            "memvision": {
+                "command": python_exe,
+                "args": [server_path],
+            }
+        }
+    }
+
+    print("\n" + "=" * 60)
+    print("  🔌 MCP Configuration for External AI Agents")
+    print("=" * 60)
+    print("\n1. Claude Desktop configuration (%APPDATA%\\Claude\\claude_desktop_config.json):")
+    print(json.dumps(claude_cfg, indent=2))
+
+    print("\n2. Cursor configuration (.cursor/mcp.json):")
+    print(json.dumps(claude_cfg, indent=2))
+    print("=" * 60 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="mem-vision-mcp",
@@ -262,9 +292,14 @@ def main() -> None:
     # open command
     subparsers.add_parser("open", help="Open the screenshots folder in Windows Explorer")
 
-    # latest command
-    latest_parser = subparsers.add_parser("latest", help="Show the most recent capture")
-    latest_parser.add_argument("--view", action="store_true", help="Open the screenshot image in default photo viewer")
+    # ui / web command
+    ui_parser = subparsers.add_parser("ui", aliases=["web"], help="Launch local glassmorphic web dashboard")
+    ui_parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind to")
+    ui_parser.add_argument("--port", type=int, default=8765, help="Port to listen on (default: 8765)")
+    ui_parser.add_argument("--no-browser", action="store_true", help="Do not open browser automatically")
+
+    # mcp-config command
+    subparsers.add_parser("mcp-config", help="Display MCP setup snippet for Claude Desktop and Cursor")
 
     args = parser.parse_args()
     setup_logging(args.verbose)
@@ -279,6 +314,10 @@ def main() -> None:
         cmd_chat(args)
     elif args.command == "mcp":
         cmd_mcp(args)
+    elif args.command in ("ui", "web"):
+        cmd_ui(args)
+    elif args.command == "mcp-config":
+        cmd_mcp_config(args)
     elif args.command == "stats":
         cmd_stats(args)
     elif args.command == "privacy-test":

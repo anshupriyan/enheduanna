@@ -9,7 +9,13 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from pathlib import Path
 from typing import Any, Dict, List
+
+# Ensure parent directory is in sys.path when executed directly
+_src_dir = str(Path(__file__).resolve().parent.parent)
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 
 from memvision.config import load_config
 from memvision.storage import MemoryStorage

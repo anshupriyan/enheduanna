@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "memvision": {
+      "command": "C:\\meta hackathon\\memvison\\.venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\meta hackathon\\memvison\\src\\memvision\\mcp_server.py"
+      ]
+    }
+  }
+}

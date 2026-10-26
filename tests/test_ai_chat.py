@@ -41,7 +41,8 @@ def test_ai_chat_and_mcp_retrieval():
         assert len(retrieved) >= 1
         assert "meta.ai" in (retrieved[0].url or "")
 
-        # Test local fallback response (no API key)
+        # Test local fallback response (isolated from live network)
+        chat.get_api_credentials = lambda: {"provider": None, "api_key": "", "model": "local", "base_url": ""}
         resp = chat.ask("What was that Meta Model API link?")
         assert len(resp.citations) >= 1
         assert "dev.meta.ai" in resp.answer
