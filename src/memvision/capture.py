@@ -54,13 +54,15 @@ class ScreenCapturer:
 
     def __init__(
         self,
-        max_dimension: int = 1920,
+        max_dimension: int = 0,
         image_format: str = "jpeg",
-        image_quality: int = 80,
+        image_quality: int = 85,
+        monitor_mode: str = "all",
     ):
         self.max_dimension = max_dimension
         self.image_format = image_format.lower()
         self.image_quality = image_quality
+        self.monitor_mode = monitor_mode.lower()
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="memvision_capturer",
@@ -79,6 +81,14 @@ class ScreenCapturer:
                         "width": max(1, right - left),
                         "height": max(1, bottom - top),
                     }
+                elif self.monitor_mode == "primary":
+                    # Look for primary monitor
+                    primary_mon = None
+                    for m in sct.monitors[1:]:
+                        if m.get("is_primary"):
+                            primary_mon = m
+                            break
+                    monitor = primary_mon or (sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0])
                 else:
                     monitor = sct.monitors[0]
 
@@ -106,14 +116,17 @@ class ScreenCapturer:
             raise RuntimeError(f"Unable to capture screen: {e}") from e
 
     def _resize_if_needed(self, img: Image.Image) -> Image.Image:
-        """Downscale image if dimensions exceed max_dimension, preserving aspect ratio."""
+        """Preserves 100% full native resolution when max_dimension <= 0."""
+        if self.max_dimension <= 0:
+            return img
+
         width, height = img.size
         max_dim = max(width, height)
-        if self.max_dimension > 0 and max_dim > self.max_dimension:
+        if max_dim > self.max_dimension:
             scale = self.max_dimension / float(max_dim)
             new_w = max(1, int(width * scale))
             new_h = max(1, int(height * scale))
-            return img.resize((new_w, new_h), Image.Resampling.BOX)
+            return img.resize((new_w, new_h), Image.Resampling.LANCZOS)
         return img
 
     def save_image(self, img: Image.Image, output_path: str | Path) -> str:

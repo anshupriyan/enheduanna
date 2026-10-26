@@ -35,6 +35,7 @@ class CaptureEngine:
             max_dimension=self.config.capture.max_dimension,
             image_format=self.config.capture.image_format,
             image_quality=self.config.capture.image_quality,
+            monitor_mode=self.config.capture.monitor_mode,
         )
         self.change_detector = ChangeDetector(
             threshold=self.config.capture.hash_threshold,

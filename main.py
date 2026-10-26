@@ -130,6 +130,41 @@ def cmd_privacy_test(args: argparse.Namespace) -> None:
     print("-" * 45)
 
 
+def cmd_open(args: argparse.Namespace) -> None:
+    import os
+    config = load_config(args.config)
+    target_dir = Path(config.storage.screenshots_dir).resolve()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Opening screenshots folder in Windows Explorer:\n  {target_dir}")
+    os.startfile(str(target_dir))
+
+
+def cmd_latest(args: argparse.Namespace) -> None:
+    import os
+    config = load_config(args.config)
+    storage = MemoryStorage(config.storage.database_path)
+    recent = storage.get_recent(limit=1)
+    if not recent:
+        print("No captures found in memory storage yet.")
+        return
+
+    r = recent[0]
+    print("\n📸 Latest Capture:")
+    print(f"  • ID:          {r.id}")
+    print(f"  • Timestamp:   {r.timestamp}")
+    print(f"  • App:         {r.app_name}")
+    print(f"  • Title:       {r.window_title}")
+    print(f"  • URL:         {r.url}")
+    print(f"  • Screenshot:  {r.screenshot_path}")
+    if r.ocr_text:
+        preview = r.ocr_text.strip().replace("\n", " ")[:140]
+        print(f"  • OCR Preview: {preview}...")
+
+    if args.view and r.screenshot_path and Path(r.screenshot_path).is_file():
+        print(f"\nOpening image in default viewer: {r.screenshot_path}")
+        os.startfile(r.screenshot_path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="mem-vision-mcp",
@@ -163,6 +198,13 @@ def main() -> None:
     priv_parser.add_argument("--title", default="", help="Window title to test")
     priv_parser.add_argument("--url", default="", help="URL to test")
 
+    # open command
+    subparsers.add_parser("open", help="Open the screenshots folder in Windows Explorer")
+
+    # latest command
+    latest_parser = subparsers.add_parser("latest", help="Show the most recent capture")
+    latest_parser.add_argument("--view", action="store_true", help="Open the screenshot image in default photo viewer")
+
     args = parser.parse_args()
     setup_logging(args.verbose)
 
@@ -176,6 +218,10 @@ def main() -> None:
         cmd_stats(args)
     elif args.command == "privacy-test":
         cmd_privacy_test(args)
+    elif args.command == "open":
+        cmd_open(args)
+    elif args.command == "latest":
+        cmd_latest(args)
 
 
 if __name__ == "__main__":
