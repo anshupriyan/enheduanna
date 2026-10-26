@@ -40,35 +40,70 @@ class AIChatEngine:
         )
 
     def get_api_credentials(self) -> Dict[str, str]:
-        """Resolves API Key, Base URL, and Model from environment or config."""
+        """
+        Intelligently resolves API Key, Base URL, and Model from environment.
+        Auto-configures the correct endpoint based on whichever API key is present:
+        Meta, OpenAI, Groq, OpenRouter, DeepSeek, Gemini, or Ollama.
+        """
         api_cfg = self.config.ai
 
-        # Priority resolution for API Key
-        api_key = (
-            os.environ.get(api_cfg.api_key_env)
-            or os.environ.get("META_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or os.environ.get("LLM_API_KEY")
-            or os.environ.get("GROQ_API_KEY")
-            or ""
-        )
+        # 1. Detect provider from environment keys
+        api_key = ""
+        base_url = ""
+        model = ""
+        provider_detected = "meta"
 
-        # Base URL resolution
-        base_url = (
-            os.environ.get("LLM_BASE_URL")
-            or api_cfg.base_url
-        ).rstrip("/")
+        if os.environ.get("OPENAI_API_KEY"):
+            api_key = os.environ["OPENAI_API_KEY"]
+            base_url = "https://api.openai.com/v1"
+            model = "gpt-4o-mini"
+            provider_detected = "openai"
+        elif os.environ.get("GROQ_API_KEY"):
+            api_key = os.environ["GROQ_API_KEY"]
+            base_url = "https://api.groq.com/openai/v1"
+            model = "llama-3.3-70b-versatile"
+            provider_detected = "groq"
+        elif os.environ.get("OPENROUTER_API_KEY"):
+            api_key = os.environ["OPENROUTER_API_KEY"]
+            base_url = "https://openrouter.ai/api/v1"
+            model = "meta-llama/llama-3.3-70b-instruct"
+            provider_detected = "openrouter"
+        elif os.environ.get("DEEPSEEK_API_KEY"):
+            api_key = os.environ["DEEPSEEK_API_KEY"]
+            base_url = "https://api.deepseek.com/v1"
+            model = "deepseek-chat"
+            provider_detected = "deepseek"
+        elif os.environ.get("GEMINI_API_KEY"):
+            api_key = os.environ["GEMINI_API_KEY"]
+            base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+            model = "gemini-2.0-flash"
+            provider_detected = "gemini"
+        elif os.environ.get("META_API_KEY") or os.environ.get(api_cfg.api_key_env):
+            api_key = os.environ.get("META_API_KEY") or os.environ.get(api_cfg.api_key_env, "")
+            base_url = api_cfg.base_url
+            model = api_cfg.model
+            provider_detected = "meta"
+        elif os.environ.get("LLM_API_KEY"):
+            api_key = os.environ["LLM_API_KEY"]
+            base_url = api_cfg.base_url
+            model = api_cfg.model
+            provider_detected = "custom"
+        else:
+            # Default / fallback settings
+            base_url = api_cfg.base_url
+            model = api_cfg.model
 
-        # Model resolution
-        model = (
-            os.environ.get("LLM_MODEL")
-            or api_cfg.model
-        )
+        # Overrides from explicit environment variables
+        if os.environ.get("LLM_BASE_URL"):
+            base_url = os.environ["LLM_BASE_URL"]
+        if os.environ.get("LLM_MODEL"):
+            model = os.environ["LLM_MODEL"]
 
         return {
-            "api_key": api_key,
-            "base_url": base_url,
+            "api_key": api_key.strip(),
+            "base_url": base_url.rstrip("/"),
             "model": model,
+            "provider": provider_detected,
         }
 
     def retrieve_context(self, query: str, limit: int = 6) -> List[CaptureRecord]:

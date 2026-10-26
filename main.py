@@ -173,6 +173,7 @@ def cmd_chat(args: argparse.Namespace) -> None:
 
     print("=" * 60)
     print("  💬 mem-vision-mcp AI Memory Chat")
+    print(f"  • Provider: {creds.get('provider', 'custom').upper()}")
     print(f"  • Model:    {creds['model']}")
     print(f"  • Endpoint: {creds['base_url']}")
     print(f"  • API Key:  {'Configured' if creds['api_key'] else 'Not set (using local retrieval summary)'}")
