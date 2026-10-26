@@ -14,9 +14,14 @@
     "consent.exe",
     "securityhealthsystray.exe",
     "authenticator.exe",
-    "authy.exe"
+    "authy.exe",
+    "discord.exe",
+    "discordptb.exe",
+    "discordcanary.exe"
   ],
   "blocked_urls": [
+    "*discord.com*",
+    "*discord.gg*",
     "*paypal.com*",
     "*chase.com*",
     "*bankofamerica.com*",
@@ -42,6 +47,7 @@
     "about:logins*"
   ],
   "blocked_window_titles": [
+    "*Discord*",
     "*Incognito*",
     "*InPrivate*",
     "*Private Browsing*",
