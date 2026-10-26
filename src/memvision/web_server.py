@@ -48,6 +48,10 @@ class MemVisionRequestHandler(SimpleHTTPRequestHandler):
         # REST API endpoints
         elif path == "/api/stats":
             self._handle_api_stats()
+        elif path == "/api/sessions":
+            limit = int(query_params.get("limit", ["20"])[0])
+            episodes = self.storage.get_episodes(limit=limit)
+            self._send_json([ep.to_dict() for ep in episodes])
         elif path == "/api/recent":
             limit = int(query_params.get("limit", ["48"])[0])
             self._handle_api_recent(limit)

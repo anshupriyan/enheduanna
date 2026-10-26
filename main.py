@@ -249,6 +249,31 @@ def cmd_mcp_config(args: argparse.Namespace) -> None:
     print("=" * 60 + "\n")
 
 
+def cmd_sessions(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    storage = MemoryStorage(config.storage.database_path)
+    episodes = storage.get_episodes(limit=args.limit)
+    if not episodes:
+        print("No task sessions recorded yet.")
+        return
+
+    print("\n" + "=" * 70)
+    print("  📦 mem-vision-mcp Clustered Focus Sessions / Episodes")
+    print("=" * 70)
+    for i, ep in enumerate(episodes, 1):
+        dur_min = round(ep.duration_seconds / 60, 1)
+        dur_str = f"{dur_min}m" if dur_min >= 1 else f"{ep.duration_seconds}s"
+        start_fmt = ep.start_time[:19].replace("T", " ")
+        print(f"\n[{i}] Episode #{ep.id} | {ep.app_name} ({dur_str}, {ep.capture_count} frames)")
+        print(f"    • Window:   {ep.title}")
+        if ep.url:
+            print(f"    • URL:      {ep.url}")
+        print(f"    • Started:  {start_fmt}")
+        if ep.summary_keywords:
+            print(f"    • Keywords: {ep.summary_keywords[:70]}")
+    print("\n" + "=" * 70 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="mem-vision-mcp",
@@ -305,6 +330,10 @@ def main() -> None:
     # mcp-config command
     subparsers.add_parser("mcp-config", help="Display MCP setup snippet for Claude Desktop and Cursor")
 
+    # sessions / episodes command
+    sess_parser = subparsers.add_parser("sessions", aliases=["episodes"], help="List clustered task sessions and focus episodes")
+    sess_parser.add_argument("-l", "--limit", type=int, default=10, help="Number of recent sessions to display")
+
     args = parser.parse_args()
     setup_logging(args.verbose)
 
@@ -322,6 +351,8 @@ def main() -> None:
         cmd_ui(args)
     elif args.command == "mcp-config":
         cmd_mcp_config(args)
+    elif args.command in ("sessions", "episodes"):
+        cmd_sessions(args)
     elif args.command == "stats":
         cmd_stats(args)
     elif args.command == "privacy-test":

@@ -62,10 +62,11 @@ def test_ai_chat_and_mcp_retrieval():
         # 2. Test MCP Server tool definitions & execution
         mcp = MCPServer(db_path=str(db_path))
         tools = mcp.get_tool_definitions()
-        assert len(tools) == 4
+        assert len(tools) == 5
         tool_names = [t["name"] for t in tools]
         assert "search_desktop_memory" in tool_names
         assert "get_recent_memory" in tool_names
+        assert "get_activity_sessions" in tool_names
 
         # Execute search tool
         results = mcp.handle_tool_call("search_desktop_memory", {"query": "Meta", "limit": 2})

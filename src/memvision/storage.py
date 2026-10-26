@@ -8,11 +8,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +33,29 @@ class CaptureRecord:
     height: int = 0
     is_redacted: int = 0
     metadata: Optional[Dict[str, Any]] = None
+    episode_id: Optional[int] = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
         return d
+
+
+@dataclass
+class EpisodeRecord:
+    id: Optional[int] = None
+    app_name: str = ""
+    title: str = ""
+    url: Optional[str] = None
+    start_time: str = ""
+    end_time: str = ""
+    duration_seconds: int = 0
+    capture_count: int = 1
+    key_capture_id: Optional[int] = None
+    screenshot_path: Optional[str] = None
+    summary_keywords: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 class MemoryStorage:
@@ -90,6 +111,35 @@ class MemoryStorage:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_app_time ON captures(app_name, timestamp DESC);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_time_desc ON captures(timestamp DESC);")
 
+            # Setup episodes table for Session / Scene Clustering (Option B)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS episodes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    app_name TEXT NOT NULL,
+                    title TEXT,
+                    url TEXT,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT NOT NULL,
+                    duration_seconds INTEGER DEFAULT 0,
+                    capture_count INTEGER DEFAULT 1,
+                    key_capture_id INTEGER,
+                    screenshot_path TEXT,
+                    summary_keywords TEXT
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_episodes_time ON episodes(start_time DESC);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_episodes_app ON episodes(app_name);")
+
+            # Migration: Ensure episode_id column exists on captures table
+            cursor = conn.execute("PRAGMA table_info(captures);")
+            cols = [r[1] for r in cursor.fetchall()]
+            if "episode_id" not in cols:
+                try:
+                    conn.execute("ALTER TABLE captures ADD COLUMN episode_id INTEGER REFERENCES episodes(id);")
+                except sqlite3.OperationalError:
+                    pass
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_episode ON captures(episode_id);")
+
             # Setup FTS5 full-text search table if supported
             if self.enable_fts:
                 try:
@@ -132,8 +182,17 @@ class MemoryStorage:
                     logger.warning("FTS5 table initialization failed (%s); full-text search will use LIKE fallback.", e)
                     self.enable_fts = False
 
-    def save_capture(self, record: CaptureRecord) -> int:
-        """Insert a capture record into SQLite. Returns new row id."""
+            # Auto-backfill existing unclustered captures if upgrading
+            try:
+                ep_count = conn.execute("SELECT COUNT(*) FROM episodes;").fetchone()[0]
+                cap_count = conn.execute("SELECT COUNT(*) FROM captures;").fetchone()[0]
+                if ep_count == 0 and cap_count > 0:
+                    self._backfill_episodes_internal(conn)
+            except Exception as e:
+                logger.debug("Episode auto-backfill skipped: %s", e)
+
+    def save_capture(self, record: CaptureRecord, cluster_episode: bool = True) -> int:
+        """Insert a capture record into SQLite and cluster into an episode. Returns new row id."""
         if not record.timestamp:
             record.timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -144,8 +203,8 @@ class MemoryStorage:
                 """
                 INSERT INTO captures (
                     timestamp, app_name, window_title, url, ocr_text,
-                    screenshot_path, phash, width, height, is_redacted, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    screenshot_path, phash, width, height, is_redacted, metadata, episode_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.timestamp,
@@ -159,9 +218,19 @@ class MemoryStorage:
                     record.height,
                     record.is_redacted,
                     meta_json,
+                    record.episode_id,
                 ),
             )
             record.id = cursor.lastrowid
+
+            if cluster_episode:
+                try:
+                    ep_id = self.cluster_or_create_episode(record, conn=conn)
+                    record.episode_id = ep_id
+                    conn.execute("UPDATE captures SET episode_id = ? WHERE id = ?;", (ep_id, record.id))
+                except Exception as e:
+                    logger.debug("Clustering capture into episode failed: %s", e)
+
             conn.commit()
             return record.id
 
@@ -344,6 +413,8 @@ class MemoryStorage:
             except Exception:
                 meta = None
 
+        ep_id = row["episode_id"] if "episode_id" in row.keys() else None
+
         return CaptureRecord(
             id=row["id"],
             timestamp=row["timestamp"],
@@ -357,4 +428,183 @@ class MemoryStorage:
             height=row["height"] or 0,
             is_redacted=row["is_redacted"] or 0,
             metadata=meta,
+            episode_id=ep_id,
+        )
+
+    def cluster_or_create_episode(
+        self,
+        record: CaptureRecord,
+        max_gap_seconds: int = 180,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> int:
+        """
+        Groups the capture into an active Episode (Task Session) or creates a new one.
+        A frame continues an episode if:
+          1. Same app_name.
+          2. Time since last frame <= max_gap_seconds.
+        """
+        def _do_cluster(c: sqlite3.Connection) -> int:
+            row = c.execute(
+                "SELECT * FROM episodes ORDER BY id DESC LIMIT 1;"
+            ).fetchone()
+
+            rec_time = datetime.fromisoformat(record.timestamp) if record.timestamp else datetime.now(timezone.utc)
+
+            if row:
+                last_ep_id = row["id"]
+                last_app = row["app_name"]
+                last_end = row["end_time"]
+                last_start = row["start_time"]
+                last_count = row["capture_count"]
+
+                try:
+                    last_end_dt = datetime.fromisoformat(last_end)
+                    gap_seconds = (rec_time - last_end_dt).total_seconds()
+                except Exception:
+                    gap_seconds = 999999
+
+                # Check if same application and within gap threshold
+                if last_app.lower() == (record.app_name or "").lower() and 0 <= gap_seconds <= max_gap_seconds:
+                    try:
+                        start_dt = datetime.fromisoformat(last_start)
+                        duration = max(0, int((rec_time - start_dt).total_seconds()))
+                    except Exception:
+                        duration = 0
+
+                    current_kw = row["summary_keywords"] or ""
+                    new_kw = self._extract_session_keywords(record.window_title, record.url)
+                    combined_kw = self._merge_keywords(current_kw, new_kw)
+                    ep_url = row["url"] or record.url
+
+                    c.execute(
+                        """
+                        UPDATE episodes
+                        SET end_time = ?,
+                            duration_seconds = ?,
+                            capture_count = ?,
+                            url = ?,
+                            summary_keywords = ?
+                        WHERE id = ?;
+                        """,
+                        (record.timestamp, duration, last_count + 1, ep_url, combined_kw, last_ep_id),
+                    )
+                    return last_ep_id
+
+            # Create new episode
+            kw = self._extract_session_keywords(record.window_title, record.url)
+            cursor = c.execute(
+                """
+                INSERT INTO episodes (
+                    app_name, title, url, start_time, end_time,
+                    duration_seconds, capture_count, key_capture_id,
+                    screenshot_path, summary_keywords
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    record.app_name,
+                    record.window_title,
+                    record.url,
+                    record.timestamp,
+                    record.timestamp,
+                    0,
+                    1,
+                    record.id,
+                    record.screenshot_path,
+                    kw,
+                ),
+            )
+            return cursor.lastrowid
+
+        if conn is not None:
+            return _do_cluster(conn)
+        else:
+            with self.connection() as c:
+                ep_id = _do_cluster(c)
+                c.commit()
+                return ep_id
+
+    def get_episodes(self, limit: int = 20) -> List[EpisodeRecord]:
+        """Retrieve recent task/focus episodes ordered by start_time DESC."""
+        results: List[EpisodeRecord] = []
+        with self.connection() as conn:
+            sql = "SELECT * FROM episodes ORDER BY id DESC LIMIT ?;"
+            for row in conn.execute(sql, (limit,)):
+                results.append(self._row_to_episode(row))
+        return results
+
+    def search_episodes(self, query: str = "", limit: int = 10) -> List[EpisodeRecord]:
+        """Search episodes by application, title, URL, or keywords."""
+        results: List[EpisodeRecord] = []
+        clean = query.strip()
+        if not clean:
+            return self.get_episodes(limit=limit)
+
+        pattern = f"%{clean}%"
+        with self.connection() as conn:
+            sql = """
+                SELECT * FROM episodes
+                WHERE app_name LIKE ?
+                   OR title LIKE ?
+                   OR url LIKE ?
+                   OR summary_keywords LIKE ?
+                ORDER BY id DESC
+                LIMIT ?;
+            """
+            for row in conn.execute(sql, (pattern, pattern, pattern, pattern, limit)):
+                results.append(self._row_to_episode(row))
+        return results
+
+    def _backfill_episodes_internal(self, conn: sqlite3.Connection) -> int:
+        """Internal helper to cluster existing unclustered captures in chronological order."""
+        rows = conn.execute("SELECT * FROM captures ORDER BY id ASC;").fetchall()
+        if not rows:
+            return 0
+
+        created = 0
+        for row in rows:
+            rec = self._row_to_record(row)
+            ep_id = self.cluster_or_create_episode(rec, conn=conn)
+            conn.execute("UPDATE captures SET episode_id = ? WHERE id = ?;", (ep_id, rec.id))
+            created += 1
+
+        conn.commit()
+        logger.info("Successfully clustered %d existing captures into episodes.", created)
+        return created
+
+    @staticmethod
+    def _extract_session_keywords(title: Optional[str], url: Optional[str]) -> str:
+        """Extracts clean informative keywords for an episode."""
+        words = []
+        if title:
+            cleaned = re.sub(r"[^\w\s.-]", " ", title)
+            words.extend([w for w in cleaned.split() if len(w) >= 3][:8])
+        if url:
+            try:
+                parsed = urlparse(url)
+                if parsed.netloc:
+                    words.append(parsed.netloc)
+            except Exception:
+                pass
+        return " ".join(dict.fromkeys(words))
+
+    @staticmethod
+    def _merge_keywords(existing: str, new_kw: str) -> str:
+        combined = (existing + " " + new_kw).split()
+        unique = list(dict.fromkeys(combined))[:20]
+        return " ".join(unique)
+
+    @staticmethod
+    def _row_to_episode(row: sqlite3.Row) -> EpisodeRecord:
+        return EpisodeRecord(
+            id=row["id"],
+            app_name=row["app_name"],
+            title=row["title"] or "",
+            url=row["url"],
+            start_time=row["start_time"],
+            end_time=row["end_time"],
+            duration_seconds=row["duration_seconds"] or 0,
+            capture_count=row["capture_count"] or 1,
+            key_capture_id=row["key_capture_id"],
+            screenshot_path=row["screenshot_path"],
+            summary_keywords=row["summary_keywords"] or "",
         )

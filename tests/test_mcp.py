@@ -47,6 +47,7 @@ def test_mcp_server_protocol():
         assert "get_recent_memory" in tool_names
         assert "get_capture_details" in tool_names
         assert "get_memory_statistics" in tool_names
+        assert "get_activity_sessions" in tool_names
 
         # 3. Test tools/call (get_memory_statistics)
         call_req = json.dumps({

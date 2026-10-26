@@ -5,11 +5,13 @@
 
 // Application State
 const state = {
+  viewMode: 'timeline',
   activeFilter: 'all',
   searchQuery: '',
   autoRefresh: true,
   refreshTimer: null,
   captures: [],
+  sessions: [],
   selectedCapture: null,
 };
 
@@ -22,6 +24,8 @@ const elements = {
   statTotalCaptures: document.getElementById('stat-total-captures'),
   statDbSize: document.getElementById('stat-db-size'),
   btnToggleAutorefresh: document.getElementById('btn-toggle-autorefresh'),
+  btnViewTimeline: document.getElementById('btn-view-timeline'),
+  btnViewSessions: document.getElementById('btn-view-sessions'),
   resultsCount: document.getElementById('results-count'),
   streamTitle: document.getElementById('stream-title'),
   lastUpdatedText: document.getElementById('last-updated-text'),
@@ -88,8 +92,29 @@ function initEventListeners() {
     elements.filterChips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
     state.activeFilter = chip.dataset.filter || 'all';
-    renderCaptures();
+    if (state.viewMode === 'sessions') {
+      renderSessions();
+    } else {
+      renderCaptures();
+    }
   });
+
+  // View mode toggle
+  if (elements.btnViewTimeline && elements.btnViewSessions) {
+    elements.btnViewTimeline.addEventListener('click', () => {
+      state.viewMode = 'timeline';
+      elements.btnViewTimeline.classList.add('active');
+      elements.btnViewSessions.classList.remove('active');
+      fetchCaptures();
+    });
+
+    elements.btnViewSessions.addEventListener('click', () => {
+      state.viewMode = 'sessions';
+      elements.btnViewSessions.classList.add('active');
+      elements.btnViewTimeline.classList.remove('active');
+      fetchSessions();
+    });
+  }
 
   // Auto-refresh toggle
   elements.btnToggleAutorefresh.addEventListener('click', () => {
@@ -284,6 +309,75 @@ function renderCaptures() {
             </div>
           ` : ''}
           <p class="card-ocr-preview">${ocrSnippet || '<span class="text-subtle">No text detected</span>'}</p>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+// Fetch Clustered Sessions
+async function fetchSessions() {
+  try {
+    const res = await fetch('/api/sessions?limit=30');
+    if (!res.ok) throw new Error('API response not OK');
+    state.sessions = await res.json();
+    renderSessions();
+
+    const now = new Date();
+    elements.lastUpdatedText.textContent = `Updated ${now.toLocaleTimeString()}`;
+  } catch (err) {
+    console.error('Error fetching sessions:', err);
+  }
+}
+
+// Render Focus Sessions
+function renderSessions() {
+  let list = state.sessions;
+  if (state.activeFilter !== 'all') {
+    list = list.filter(s => (s.app_name || '').toLowerCase() === state.activeFilter.toLowerCase());
+  }
+
+  elements.resultsCount.textContent = `${list.length} sessions`;
+  elements.streamTitle.textContent = 'Clustered Focus Sessions';
+
+  if (list.length === 0) {
+    elements.capturesGrid.innerHTML = `
+      <div class="empty-state">
+        <p>No focus sessions recorded yet.</p>
+      </div>
+    `;
+    return;
+  }
+
+  elements.capturesGrid.innerHTML = list.map(s => {
+    const durMin = Math.round((s.duration_seconds / 60) * 10) / 10;
+    const durStr = durMin >= 1 ? `${durMin}m` : `${s.duration_seconds}s`;
+    const appColor = getAppColorClass(s.app_name);
+
+    return `
+      <article class="capture-card session-card" onclick="openCaptureDetail(${s.key_capture_id || 1})">
+        <div class="card-thumb-container">
+          <img class="card-thumb-img" src="/api/screenshot/${s.key_capture_id || 1}" alt="Session #${s.id}" loading="lazy" onerror="this.src='/fallback.png'">
+          <div class="card-badge-row">
+            <span class="app-badge ${appColor}">${escapeHtml(s.app_name || 'session')}</span>
+            <div style="display: flex; gap: 0.3rem;">
+              <span class="session-duration-tag">⏱️ ${durStr}</span>
+              <span class="session-frames-tag">${s.capture_count} frames</span>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <h4 class="card-title" title="${escapeHtml(s.title || '')}">${escapeHtml(s.title || 'Focus Session')}</h4>
+          ${s.url ? `
+            <div class="card-url-row">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHtml(cleanUrlDisplay(s.url))}</a>
+            </div>
+          ` : ''}
+          <p class="card-ocr-preview"><span class="text-subtle">Keywords:</span> ${escapeHtml(s.summary_keywords || 'Activity recorded')}</p>
         </div>
       </article>
     `;

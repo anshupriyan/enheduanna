@@ -104,6 +104,20 @@ class MCPServer:
                     "properties": {},
                 },
             },
+            {
+                "name": "get_activity_sessions",
+                "description": "Retrieves clustered focus sessions / episodes (e.g. coding session in VS Code for 45 mins, browsing documentation for 15 mins) with start/end timestamps, duration, and frame counts.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Number of recent activity sessions to return (default: 10).",
+                            "default": 10,
+                        },
+                    },
+                },
+            },
         ]
 
     def handle_tool_call(self, name: str, args: Dict[str, Any]) -> Any:
@@ -162,6 +176,25 @@ class MCPServer:
 
         elif name == "get_memory_statistics":
             return self.storage.get_stats()
+
+        elif name == "get_activity_sessions":
+            limit = int(args.get("limit", 10))
+            episodes = self.storage.get_episodes(limit=limit)
+            return [
+                {
+                    "id": ep.id,
+                    "app_name": ep.app_name,
+                    "title": ep.title,
+                    "url": ep.url,
+                    "start_time": ep.start_time,
+                    "end_time": ep.end_time,
+                    "duration_seconds": ep.duration_seconds,
+                    "duration_minutes": round(ep.duration_seconds / 60, 1),
+                    "capture_count": ep.capture_count,
+                    "summary_keywords": ep.summary_keywords,
+                }
+                for ep in episodes
+            ]
 
         else:
             raise ValueError(f"Unknown tool: {name}")
