@@ -13,25 +13,25 @@
        |                                                                    |
        |   << THE WORLD''S FIRST AUTHOR REBORN AS AN AUTONOMOUS AGENT >>     |
        |====================================================================|
-       |  👁️  THE MEMORY SCRIBE                ⚡ THE CLI OPERATOR          |
+       |  ::  THE MEMORY SCRIBE                ::  THE CLI OPERATOR         |
        |  -------------------------            -------------------------    |
-       |  • Continuous WinRT OCR (Native)      • Sandboxed Terminal Bridge  |
-       |  • Spatial Window Blackout Curtain    • Granular Policy Guardrails |
-       |  • Video & Animation Suppression      • Session Approvals & JIT    |
-       |  • Incremental Draft Collapsing       • CWE-59 Symlink Hardening   |
-       |  • SQLite FTS5 Episodic Memory        • Standardized MCP Server    |
+       |  + Continuous WinRT OCR (Native)      + Sandboxed Terminal Bridge  |
+       |  + Spatial Window Blackout Curtain    + Granular Policy Guardrails |
+       |  + Video & Animation Suppression      + Session Approvals & JIT    |
+       |  + Incremental Draft Collapsing       + CWE-59 Symlink Hardening   |
+       |  + SQLite FTS5 Episodic Memory        + Standardized MCP Server    |
        |____________________________________________________________________|
 ```
 
-# E N H E D U A N N A
+# ENHEDUANNA
 
-### *The Autonomous Desktop Scribe & Execution Framework for AI*
+### *Autonomous Desktop Scribe & Tool Execution Framework for AI*
 
-[![Meta Global AI Hackathon](https://img.shields.io/badge/Meta_Global_AI-Hackathon_2026-0668E1?style=for-the-badge&logo=meta&logoColor=white)](https://dev.meta.ai/)
-[![Protocol MCP](https://img.shields.io/badge/Protocol-MCP_2.0-8A2BE2?style=for-the-badge&logo=anthropic&logoColor=white)](https://modelcontextprotocol.io/)
-[![Hardware WinRT OCR](https://img.shields.io/badge/Hardware-WinRT_OCR_100%25-00A4EF?style=for-the-badge&logo=windows&logoColor=white)](https://learn.microsoft.com/en-us/uwp/api/windows.media.ocr)
-[![Zero-Leak Privacy](https://img.shields.io/badge/Privacy-Zero--Leak_Redaction-00C853?style=for-the-badge)](./memvison/src/memvision/privacy.py)
-[![License MIT](https://img.shields.io/badge/License-MIT-F5A623?style=for-the-badge)](./LICENSE)
+[![Protocol MCP](https://img.shields.io/badge/PROTOCOL-MCP_2.0-6C5CE7?style=for-the-badge&logoColor=white)](https://modelcontextprotocol.io/)
+[![Hardware WinRT OCR](https://img.shields.io/badge/ENGINE-WINRT_OCR_100%25-0984E3?style=for-the-badge&logoColor=white)](https://learn.microsoft.com/en-us/uwp/api/windows.media.ocr)
+[![Zero-Leak Privacy](https://img.shields.io/badge/SECURITY-ZERO--LEAK_REDACTION-00B894?style=for-the-badge)](./memvison/src/memvision/privacy.py)
+[![Architecture Monorepo](https://img.shields.io/badge/STACK-PYTHON_%2B_NODE-2D3436?style=for-the-badge)](./)
+[![License MIT](https://img.shields.io/badge/LICENSE-MIT-E17055?style=for-the-badge)](./LICENSE)
 
 ---
 
@@ -39,30 +39,30 @@
 > *That which I have said to you in the dead of night, let the singer repeat at high noon."*  
 > — **Enheduanna**, High Priestess of Ur (*The Exaltation of Inanna*, c. 2300 BCE)
 
-[**The Mythos**](#-the-mythos--the-mission) • [**Architecture**](#-dual-faculty-architecture) • [**The Two Faculties**](#-the-two-faculties) • [**Quick Start**](#-quick-start) • [**Zero-Leak Privacy**](#-zero-leak-privacy-guarantees) • [**Meta AI Guide**](#-meta-model-api-integration)
+[**Mythos**](#-mythos--concept) • [**Architecture**](#-dual-faculty-architecture) • [**Faculties**](#-system-faculties) • [**Quick Start**](#-quick-start) • [**Privacy & Stability**](#-privacy--stability-guarantees) • [**Inference Setup**](#-inference--model-integration)
 
 </div>
 
 ---
 
-## 📜 The Mythos & The Mission
+## ◈ Mythos & Concept
 
-Over **4,300 years ago**, in the ancient city of Ur, a high priestess named **Enheduanna** picked up a reed stylus and pressed her thoughts into wet clay tablets. By signing her own name, she became the **first recorded author in human history**—transforming fleeting human consciousness into permanent, indelible memory.
+Over **4,300 years ago**, in the ancient Sumerian city of Ur, **Enheduanna** became the **first recorded author in human history**. By pressing her stylus into wet clay and signing her work, she established the very concept of capturing conscious human experience into permanent, structured memory.
 
-Modern desktop AI agents suffer from acute amnesia: they cannot remember what you did five minutes ago, and they cannot safely touch your computer without risking destructive actions.
+Modern desktop AI agents operate with complete amnesia: they cannot perceive what you did minutes ago, and they cannot touch your operating system without risk of uncontrolled destruction.
 
-**Enheduanna** solves both frontiers by unifying two complementary faculties into a single Model Context Protocol (MCP) monorepo:
-- **The Scribe (`memvison/`)**: Permanently observes, filters, OCRs, and clusters your desktop activity into a searchable, privacy-guarded episodic memory.
-- **The Operator (`cli-bridge/`)**: Provides the reasoning agent with a sandboxed, policy-bounded hands-on terminal to execute tasks, builds, and system tools safely.
+**Enheduanna** addresses both boundaries through a unified, modular architecture over the **Model Context Protocol (MCP)**:
+- **The Scribe (`memvison/`)**: Observes, redacts, extracts, and clusters desktop activity into a searchable, privacy-guarded episodic memory.
+- **The Operator (`cli-bridge/`)**: Provides the reasoning model with a policy-bounded, sandboxed execution bridge to run terminal commands, builds, and tools safely.
 
 ---
 
-## 🏛️ Dual-Faculty Architecture
+## ◈ Dual-Faculty Architecture
 
 ```
                        ┌─────────────────────────────────────┐
                        │        LLM / Desktop Agent          │
-                       │   (Meta Llama 3.3 / Claude / etc.)  │
+                       │     (Llama / Claude / Custom)       │
                        └──────────────────┬──────────────────┘
                                           │
                    ┌──────────────────────┴──────────────────────┐
@@ -72,53 +72,53 @@ Modern desktop AI agents suffer from acute amnesia: they cannot remember what yo
         │             memvison/               │       │            cli-bridge/              │
         │        [THE MEMORY SCRIBE]          │       │         [THE CLI OPERATOR]          │
         ├─────────────────────────────────────┤       ├─────────────────────────────────────┤
-        │ 👁️ Continuous Native WinRT OCR       │       │ 🛡️ Policy-Engine (allow/ask/deny)   │
-        │ 🛡️ Spatial Blackout Curtains        │       │ ⚡ Sandboxed Shell Execution        │
-        │ 🔑 Zero-Leak Regex Secret Scrubbing │       │ 🤝 Interactive Session Approvals    │
-        │ 🎬 Video & Animation Suppression    │       │ 📂 JIT Ephemeral Path Access Grants │
-        │ 📝 Incremental Draft Collapsing     │       │ 🔒 CWE-59 Symlink Escape Hardened   │
-        │ 🧩 Temporal Episode Clustering      │       │ 📜 Audit Trail & Journal Logging    │
-        │ ⚡ SQLite WAL + FTS5 BM25 Search    │       │ 🔌 JSON-RPC 2.0 stdio MCP Server    │
+        │ + Continuous Native WinRT OCR       │       │ + Policy-Engine (allow/ask/deny)    │
+        │ + Spatial Blackout Curtains         │       │ + Sandboxed Shell Execution         │
+        │ + Zero-Leak Regex Secret Scrubbing  │       │ + Interactive Session Approvals     │
+        │ + Video & Animation Suppression     │       │ + JIT Ephemeral Path Access Grants  │
+        │ + Incremental Draft Collapsing      │       │ + CWE-59 Symlink Escape Hardened    │
+        │ + Temporal Episode Clustering       │       │ + Audit Trail & Journal Logging     │
+        │ + SQLite WAL + FTS5 BM25 Search     │       │ + JSON-RPC 2.0 stdio MCP Server     │
         └─────────────────────────────────────┘       └─────────────────────────────────────┘
 ```
 
 ---
 
-## ⚖️ The Two Faculties
+## ◈ System Faculties
 
-| Faculty | Component | Core Responsibility | Key Innovations |
+| Faculty | Directory | Role | Core Innovations |
 | :--- | :--- | :--- | :--- |
-| **The Scribe** | [`memvison/`](./memvison) | **Perceptual Memory** | • **Spatial Masking:** Opaque black curtains over sensitive windows in split-screen.<br>• **Zero-Leak Scrubbing:** Automatic regex redaction of API keys and JWTs.<br>• **Stability Gating:** Drops YouTube/Netflix video frames with static text.<br>• **Draft Collapse:** In-place accumulation of document writing (replaces 20 drafts with 1). |
-| **The Operator** | [`cli-bridge/`](./cli-bridge) | **Tool Execution** | • **Policy Engine:** Declarative JSON policy forbidding destructive commands.<br>• **Human-in-the-Loop:** Interactive approval prompt for high-impact tools.<br>• **CWE-59 Hardened:** Defends against symlink breakout exploits.<br>• **Scoped Journaling:** Per-project development journals and log scoping. |
+| **The Scribe** | [`memvison/`](./memvison) | **Perceptual Memory** | • **Spatial Masking:** Opaque blackout curtains over private windows in split-screen mode.<br>• **Zero-Leak Scrubbing:** Automatic regex redaction of API keys, tokens, and credentials.<br>• **Stability Gating:** Drops video playback frames with static webpage text.<br>• **Draft Collapse:** In-place accumulation of document writing (replaces 20 drafts with 1). |
+| **The Operator** | [`cli-bridge/`](./cli-bridge) | **Tool Execution** | • **Policy Engine:** Declarative JSON policy blocking destructive system actions.<br>• **Human-in-the-Loop:** Interactive session approval for sensitive CLI commands.<br>• **CWE-59 Hardened:** Defense against symlink breakout attacks.<br>• **Scoped Journals:** Granular per-project development journals and execution logs. |
 
 ---
 
-## 🛡️ Zero-Leak Privacy & Stability Innovations
+## ◈ Privacy & Stability Guarantees
 
-> [!IMPORTANT]
-> **100% Local-First Guarantee**: Your screen frames, OCR tokens, SQLite databases, and terminal commands **never leave your machine**. There is zero cloud dependency, zero telemetry leakage, and zero recurring subscription cost.
+> [!NOTE]
+> **100% Local-First Operation**: Screenshots, OCR indexes, SQLite databases, and terminal actions **never leave your local machine**. There are no external cloud syncs, no telemetry beacons, and zero external subscriptions required.
 
-### 1. 🎭 Spatial Window Masking (The "Blackout Curtain")
+### 1. Spatial Window Masking (The "Blackout Curtain")
 When working side-by-side in split-screen mode, clicking an allowed app (e.g. VS Code) while a private app (e.g. Discord, 1Password) sits visible would normally photograph confidential chats. Enheduanna uses Win32 window enumeration to paint an opaque matte rectangle over restricted windows **before OCR runs**, ensuring **0 characters** are ever indexed.
 
-### 2. 🔑 Zero-Leak Real-Time Secret Scrubbing
-Pre-persistence regex scanner intercepting all standard credentials:
+### 2. Zero-Leak Real-Time Secret Scrubbing
+An inline pre-persistence regex scanner intercepts all standard credentials before storage:
 - **API Keys**: OpenAI, Anthropic, OpenRouter, Google AI, AWS, HuggingFace, Slack.
 - **Tokens & Secrets**: Bearer authentication tokens, JWTs, private keys (`BEGIN PRIVATE KEY`).
-- **Sanitized 675+ historical exposures** across 161 records with zero data loss.
+- **Retroactive Sanitizer**: Sweeps historical SQLite databases and FTS5 indexes to purge exposed tokens.
 
-### 3. 🎬 Video & Animation Suppression
-Watching YouTube, Twitch, or movies normally floods memory with 1,000+ redundant frames per hour. Enheduanna measures OCR text stability across consecutive frames. If pixels change but the webpage text remains $\ge 90\%$ identical, **the frame is immediately dropped**—saving disk space and CPU.
+### 3. Video & Animation Suppression
+Watching video streams (YouTube, Twitch, Netflix, VLC) normally floods memory with 1,000+ redundant frames per hour. Enheduanna evaluates OCR text stability across consecutive frames. If pixels change but the webpage text remains $\ge 90\%$ identical, **the frame is immediately dropped**—saving disk space and CPU.
 
-### 4. 📝 Incremental Draft Collapsing
+### 4. Incremental Draft Collapsing
 Typing a document or code normally produces dozens of fragmented snapshots (e.g. Paragraph 1, then Paragraphs 1 & 2). Enheduanna recognizes text expansion within a 60-second window, **updates the record in-place**, and **unlinks obsolete partial screenshots from disk**.
 
 ---
 
-## 🚀 Quick Start
+## ◈ Quick Start
 
-### Prerequisites
-- **Windows 10/11** (for hardware-accelerated WinRT OCR)
+### System Requirements
+- **Windows 10 / 11** (for hardware-accelerated WinRT OCR)
 - **Python 3.10+** (for `memvison`)
 - **Node.js v18+** (for `cli-bridge`)
 
@@ -139,8 +139,8 @@ npm install
 npm run build
 ```
 
-### 3. Configure Your AI Assistant (Claude Desktop / Cursor)
-Add both engines to your `%APPDATA%\Claude\claude_desktop_config.json`:
+### 3. Register with MCP Clients (Claude Desktop / Cursor)
+Add both engines to your configuration file (e.g. `%APPDATA%\Claude\claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
@@ -162,21 +162,23 @@ Add both engines to your `%APPDATA%\Claude\claude_desktop_config.json`:
 
 ---
 
-## 🤖 Meta Model API Integration
+## ◈ Inference & Model Integration
 
-Enheduanna is fully optimized for **Meta Llama 3.3 70B Instruct** and the Meta Model API ecosystem. See our comprehensive reference:
+Enheduanna operates as a client-agnostic MCP bridge. It natively supports any modern LLM via standard JSON-RPC 2.0 tool definitions:
 
-👉 [**`memvison/META_MODEL_API_REFERENCE.md`**](./memvison/META_MODEL_API_REFERENCE.md)
+- **Meta Llama 3.3 (70B Instruct)**: Optimized prompt templates and tool calling schemas.
+- **Anthropic Claude (3.5 Sonnet)**: Seamless integration via Claude Desktop MCP.
+- **Multi-Provider Fallback**: Built-in support for OpenAI, Groq, OpenRouter, DeepSeek, and local Ollama instances.
 
-- Wire protocols for `/v1/responses`, `/v1/chat/completions`, and `/v1/messages`.
-- Multi-provider auto-discovery fallback (Meta, Groq, OpenRouter, DeepSeek, Gemini).
+For protocol specifications and API wire details, see:
+[`memvison/META_MODEL_API_REFERENCE.md`](./memvison/META_MODEL_API_REFERENCE.md)
 
 ---
 
-## 📊 Verification & Telemetry
+## ◈ Verification & Test Telemetry
 
 ```bash
-# Run Scribe stability & privacy unit tests (10/10 passed in 0.26s)
+# Run Scribe stability, privacy & OCR unit tests (10/10 passing in 0.26s)
 pytest memvison/tests/test_stability.py memvison/tests/test_privacy.py
 
 # Run Operator security & policy test suite
@@ -185,5 +187,5 @@ cd cli-bridge && npm test
 
 ---
 
-## 📜 License
-Released under the **MIT License**. Created with pride for the **Meta Global AI Hackathon 2026**.
+## ◈ License
+Released under the **MIT License**.
