@@ -26,6 +26,10 @@ class CaptureConfig:
     monitor_mode: str = "all"           # "all" (all displays) or "primary" (primary display)
     capture_active_window_only: bool = False
     max_dimension: int = 0              # Backwards-compatible alias
+    video_suppression_enabled: bool = True       # Suppress redundant captures when pixels change but text is static (e.g. video playback)
+    text_stability_threshold: float = 0.90       # Similarity threshold (0.0 - 1.0) to consider text unchanged
+    draft_collapse_enabled: bool = True          # Collapse incremental typing/drafting into a single updated capture
+    draft_collapse_window_sec: float = 60.0      # Maximum seconds between drafting steps to collapse into the previous record
 
 
 @dataclass

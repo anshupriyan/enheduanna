@@ -8,7 +8,11 @@
     "ocr_max_dimension": 0,
     "storage_max_dimension": 1280,
     "monitor_mode": "all",
-    "capture_active_window_only": false
+    "capture_active_window_only": false,
+    "video_suppression_enabled": true,
+    "text_stability_threshold": 0.90,
+    "draft_collapse_enabled": true,
+    "draft_collapse_window_sec": 60.0
   },
   "ocr": {
     "primary_engine": "winrt",

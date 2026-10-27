@@ -5,6 +5,7 @@ Orchestrates screen sampling, change detection, context extraction, privacy filt
 
 from __future__ import annotations
 
+import difflib
 import logging
 import signal
 import time
@@ -61,16 +62,65 @@ class CaptureEngine:
 
         self._running = False
         self._step_callbacks: list[Callable[[CaptureRecord], None]] = []
+        self._last_saved_record: Optional[CaptureRecord] = None
+        self._last_saved_time: float = 0.0
 
     def register_step_callback(self, cb: Callable[[CaptureRecord], None]) -> None:
         """Register a callback invoked whenever a capture is committed."""
         self._step_callbacks.append(cb)
 
+    def _evaluate_text_stability(
+        self,
+        prev_text: str,
+        curr_text: str,
+    ) -> tuple[bool, bool, float, float]:
+        """
+        Evaluates whether current text represents:
+        1. is_video_static: Moving pixels with essentially identical text (e.g. video playback / stream / animation).
+        2. is_draft_expansion: Incremental typing expanding existing text (e.g. typing a 2nd paragraph in a document).
+
+        Returns:
+            (is_video_static, is_draft_expansion, char_similarity, containment_ratio)
+        """
+        p_clean = " ".join(prev_text.split()).strip().lower()
+        c_clean = " ".join(curr_text.split()).strip().lower()
+
+        # Both empty (e.g. fullscreen video player where controls auto-hide)
+        if not p_clean and not c_clean:
+            return True, False, 1.0, 1.0
+
+        # One empty and other has content -> genuine content appearance/disappearance
+        if not p_clean or not c_clean:
+            return False, False, 0.0, 0.0
+
+        # Fast character similarity using SequenceMatcher.quick_ratio
+        char_sim = difflib.SequenceMatcher(None, p_clean, c_clean).quick_ratio()
+
+        # Word sets for containment
+        p_words = set(p_clean.split())
+        c_words = set(c_clean.split())
+        intersection = len(p_words & c_words)
+        containment = intersection / max(1, len(p_words))
+
+        # 1. Video / Animation check: Text is nearly identical
+        threshold = self.config.capture.text_stability_threshold
+        is_video_static = char_sim >= threshold or (containment >= 0.95 and abs(len(c_clean) - len(p_clean)) < 20)
+
+        # 2. Incremental Draft check: Text grew longer, and previous words are largely preserved
+        is_draft_expansion = (
+            not is_video_static
+            and len(c_clean) > len(p_clean)
+            and containment >= 0.85
+        )
+
+        return is_video_static, is_draft_expansion, char_sim, containment
+
     def capture_once(self, force: bool = False) -> Optional[CaptureRecord]:
         """
         Executes a single capture tick.
         Useful for on-demand captures, unit testing, and CLI dry-runs.
-        Implements Approach 1: Spatial Window Masking ("The Blackout Curtain").
+        Implements Approach 1: Spatial Window Masking ("The Blackout Curtain"),
+        Video/Animation Suppression, and Incremental Draft Collapsing.
         """
         # 1. Grab screen in 100% full native resolution
         try:
@@ -198,9 +248,107 @@ class CaptureEngine:
                 ctx.app_name,
             )
 
-        # 8. Save preview image to disk
-        # If any windows were masked, stamp sleek privacy badge on the saved preview
+        # 7.2 Text & Title Stability Gating (Video Suppression & Draft Collapsing)
+        now_epoch = time.time()
+        is_same_window = (
+            self._last_saved_record is not None
+            and (self._last_saved_record.app_name or "").lower() == (ctx.app_name or "").lower()
+            and self._last_saved_record.window_title == sanitized_title
+        )
+
         now = datetime.now(timezone.utc)
+        is_redacted_flag = 1 if (total_redactions > 0 or bool(blocked_windows)) else 0
+
+        if is_same_window and not force:
+            prev_ocr = self._last_saved_record.ocr_text or ""
+            is_video_static, is_draft_expansion, char_sim, containment = self._evaluate_text_stability(
+                prev_text=prev_ocr,
+                curr_text=sanitized_ocr,
+            )
+
+            # Case A: Video / Animation Suppression
+            # The pixels changed (dHash triggered), but the text on screen is unchanged!
+            if self.config.capture.video_suppression_enabled and is_video_static:
+                logger.info(
+                    "🎬 VIDEO SUPPRESSION: Skipped capture for [%s] '%.40s' (OCR text identical/stable, sim=%.2f)",
+                    ctx.app_name,
+                    sanitized_title,
+                    char_sim,
+                )
+                return None
+
+            # Case B: Incremental Document Drafting / Accumulation
+            # The user typed more into the same document within the collapse window.
+            # We supersede the previous capture so only the accumulated state is kept!
+            time_since_last = now_epoch - self._last_saved_time
+            if (
+                self.config.capture.draft_collapse_enabled
+                and is_draft_expansion
+                and time_since_last <= self.config.capture.draft_collapse_window_sec
+            ):
+                # Save new screenshot with the accumulated text
+                ts_slug = now.strftime("%Y%m%d_%H%M%S_%f")[:19]
+                fmt_ext = "jpg" if self.config.capture.image_format.lower() in ("jpg", "jpeg") else "webp"
+                filename = f"{ts_slug}_{hash_str[:8]}.{fmt_ext}"
+                screenshot_file = self.screenshots_dir / filename
+
+                preview_img = img
+                if blocked_windows:
+                    preview_img = img.copy()
+                    self.capturer.redact_blocked_windows(preview_img, blocked_windows, stamp_badge=True)
+
+                saved_path, thumb_w, thumb_h = self.capturer.save_image(preview_img, screenshot_file, downscale_for_storage=True)
+
+                # Delete obsolete partial draft screenshot
+                old_screenshot = self._last_saved_record.screenshot_path
+                if old_screenshot and old_screenshot != saved_path:
+                    try:
+                        Path(old_screenshot).unlink(missing_ok=True)
+                    except Exception as e:
+                        logger.debug("Could not remove superseded draft screenshot: %s", e)
+
+                # Update the existing record in-place in SQLite and FTS5
+                prev_id = self._last_saved_record.id
+                draft_count = (self._last_saved_record.metadata or {}).get("draft_accumulations", 0) + 1
+
+                self._last_saved_record.timestamp = now.isoformat()
+                self._last_saved_record.ocr_text = sanitized_ocr
+                self._last_saved_record.screenshot_path = saved_path
+                self._last_saved_record.phash = hash_str
+                self._last_saved_record.width = img.width
+                self._last_saved_record.height = img.height
+                self._last_saved_record.is_redacted = is_redacted_flag
+                if not self._last_saved_record.metadata:
+                    self._last_saved_record.metadata = {}
+                self._last_saved_record.metadata.update({
+                    "draft_accumulations": draft_count,
+                    "superseded_chars": len(prev_ocr),
+                    "accumulated_chars": len(sanitized_ocr),
+                    "ocr_duration_ms": round(ocr_duration_ms, 2),
+                    "storage_dimensions": f"{thumb_w}x{thumb_h}",
+                })
+
+                self.storage.update_capture(prev_id, self._last_saved_record)
+                self._last_saved_time = now_epoch
+
+                logger.info(
+                    "📝 DRAFT COLLAPSE #%d: Updated accumulated text (+%d chars) for [%s] '%.40s'",
+                    prev_id,
+                    len(sanitized_ocr) - len(prev_ocr),
+                    ctx.app_name,
+                    sanitized_title,
+                )
+
+                for cb in self._step_callbacks:
+                    try:
+                        cb(self._last_saved_record)
+                    except Exception as e:
+                        logger.error("Error in capture callback: %s", e)
+
+                return self._last_saved_record
+
+        # 8. Save preview image to disk (Standard New Capture)
+        # If any windows were masked, stamp sleek privacy badge on the saved preview
         ts_slug = now.strftime("%Y%m%d_%H%M%S_%f")[:19]
         fmt_ext = "jpg" if self.config.capture.image_format.lower() in ("jpg", "jpeg") else "webp"
         filename = f"{ts_slug}_{hash_str[:8]}.{fmt_ext}"
@@ -214,7 +362,6 @@ class CaptureEngine:
         saved_path, thumb_w, thumb_h = self.capturer.save_image(preview_img, screenshot_file, downscale_for_storage=True)
 
         # 9. Persist to SQLite & FTS5
-        is_redacted_flag = 1 if (total_redactions > 0 or bool(blocked_windows)) else 0
         record = CaptureRecord(
             timestamp=now.isoformat(),
             app_name=ctx.app_name,
@@ -240,6 +387,8 @@ class CaptureEngine:
         )
         record_id = self.storage.save_capture(record)
         record.id = record_id
+        self._last_saved_record = record
+        self._last_saved_time = now_epoch
 
         redact_info = f" [REDACTED: {total_redactions} tokens]" if total_redactions > 0 else ""
         mask_info = f" [MASKED: {', '.join(set(masked_names))}]" if masked_names else ""
