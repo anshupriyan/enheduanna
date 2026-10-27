@@ -234,6 +234,47 @@ class MemoryStorage:
             conn.commit()
             return record.id
 
+    def update_capture(self, record_id: int, record: CaptureRecord) -> bool:
+        """
+        Update an existing capture record in SQLite.
+        Triggers FTS5 synchronization automatically via captures_au.
+        """
+        meta_json = json.dumps(record.metadata) if record.metadata else None
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE captures SET
+                    timestamp = ?,
+                    app_name = ?,
+                    window_title = ?,
+                    url = ?,
+                    ocr_text = ?,
+                    screenshot_path = ?,
+                    phash = ?,
+                    width = ?,
+                    height = ?,
+                    is_redacted = ?,
+                    metadata = ?
+                WHERE id = ?;
+                """,
+                (
+                    record.timestamp,
+                    record.app_name,
+                    record.window_title,
+                    record.url,
+                    record.ocr_text,
+                    record.screenshot_path,
+                    record.phash,
+                    record.width,
+                    record.height,
+                    record.is_redacted,
+                    meta_json,
+                    record_id,
+                ),
+            )
+            conn.commit()
+            return True
+
     def search(
         self,
         query: str = "",
