@@ -1,0 +1,38 @@
+{
+  "capture": {
+    "interval_seconds": 1.0,
+    "hash_threshold": 3,
+    "hash_algorithm": "dhash",
+    "image_format": "jpeg",
+    "image_quality": 80,
+    "ocr_max_dimension": 0,
+    "storage_max_dimension": 1280,
+    "monitor_mode": "all",
+    "capture_active_window_only": false
+  },
+  "ocr": {
+    "primary_engine": "winrt",
+    "fallback_engine": "pytesseract",
+    "enabled": true,
+    "confidence_threshold": 0.0
+  },
+  "storage": {
+    "database_path": "data/memvision.db",
+    "screenshots_dir": "data/screenshots",
+    "enable_fts": true,
+    "retention_days": 30
+  },
+  "privacy": {
+    "config_path": "config/privacy_rules.json",
+    "enabled": true
+  },
+  "ai": {
+    "provider": "meta",
+    "base_url": "https://api.meta.ai/v1",
+    "api_key_env": "META_API_KEY",
+    "model": "llama-3.3-70b-instruct",
+    "temperature": 0.2,
+    "max_tokens": 1024,
+    "max_context_items": 6
+  }
+}

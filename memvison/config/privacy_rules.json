@@ -1,0 +1,129 @@
+{
+  "mode": "blocklist",
+  "action_on_block": "drop",
+  "blocked_apps": [
+    "1password.exe",
+    "1password7.exe",
+    "bitwarden.exe",
+    "keepass.exe",
+    "keepassxc.exe",
+    "lastpass.exe",
+    "dashlane.exe",
+    "enpass.exe",
+    "credentialui.exe",
+    "consent.exe",
+    "securityhealthsystray.exe",
+    "authenticator.exe",
+    "authy.exe",
+    "discord.exe",
+    "discordptb.exe",
+    "discordcanary.exe"
+  ],
+  "blocked_urls": [
+    "*discord.com*",
+    "*discord.gg*",
+    "*paypal.com*",
+    "*chase.com*",
+    "*bankofamerica.com*",
+    "*wellsfargo.com*",
+    "*citi.com*",
+    "*fidelity.com*",
+    "*vanguard.com*",
+    "*schwab.com*",
+    "*coinbase.com*",
+    "*binance.com*",
+    "*login.live.com*",
+    "*accounts.google.com/signin*",
+    "*appleid.apple.com*",
+    "*auth0.com*",
+    "*okta.com*",
+    "chrome://settings*",
+    "chrome://password-manager*",
+    "edge://settings*",
+    "edge://wallet*",
+    "brave://settings*",
+    "brave://wallet*",
+    "about:preferences*",
+    "about:logins*"
+  ],
+  "blocked_window_titles": [
+    "*Discord*",
+    "*Incognito*",
+    "*InPrivate*",
+    "*Private Browsing*",
+    "*1Password*",
+    "*Bitwarden*",
+    "*KeePass*",
+    "*Master Password*",
+    "*Enter PIN*",
+    "*Payment Method*",
+    "*Enter Password*",
+    "*omniroute*",
+    "*combo*.txt*",
+    "*.env*",
+    "*credentials*",
+    "*secret*",
+    "*api_key*",
+    "*apikey*",
+    "*id_rsa*",
+    "*id_ed25519*"
+  ],
+  "redacted_text_patterns": [
+    {
+      "name": "Standard API Keys (OpenAI, OpenRouter, Anthropic, DeepSeek)",
+      "pattern": "\\b(?:sk-[a-zA-Z0-9_\\-]{14,}|sk-or-v1-[a-zA-Z0-9_\\-]{14,}|sk-ant-[a-zA-Z0-9_\\-]{14,})\\b",
+      "replacement": "[REDACTED_API_KEY]"
+    },
+    {
+      "name": "GitHub Access & OAuth Tokens",
+      "pattern": "\\bgh[pousr]_[a-zA-Z0-9]{36,255}\\b",
+      "replacement": "[REDACTED_GITHUB_TOKEN]"
+    },
+    {
+      "name": "Google API Keys",
+      "pattern": "\\bAIza[0-9A-Za-z-_]{35}\\b",
+      "replacement": "[REDACTED_GOOGLE_KEY]"
+    },
+    {
+      "name": "AWS Access Keys",
+      "pattern": "\\b(?:AKIA|ABIA|ACCA|ASIA)[0-9A-Z]{16}\\b",
+      "replacement": "[REDACTED_AWS_KEY]"
+    },
+    {
+      "name": "HuggingFace Access Tokens",
+      "pattern": "\\bhf_[a-zA-Z0-9]{34,}\\b",
+      "replacement": "[REDACTED_HF_TOKEN]"
+    },
+    {
+      "name": "Slack API Tokens",
+      "pattern": "\\bxox[baprs]-[0-9a-zA-Z]{10,48}\\b",
+      "replacement": "[REDACTED_SLACK_TOKEN]"
+    },
+    {
+      "name": "Bearer Auth Tokens",
+      "pattern": "(?i)\\bBearer\\s+([a-zA-Z0-9_\\-\\.~+/]{20,})\\b",
+      "replacement": "Bearer [REDACTED_BEARER_TOKEN]"
+    },
+    {
+      "name": "Variable Key/Secret/Password Assignments",
+      "pattern": "(?i)\\b(?:api[\\s_-]?key|secret|password|access[\\s_-]?token|auth[\\s_-]?token|private[\\s_-]?key)\\s*[:=\\-]+\\s*['\"]?([a-zA-Z0-9_\\-\\.~+/]{12,})['\"]?",
+      "replacement": "[REDACTED_SECRET]"
+    },
+    {
+      "name": "JSON Web Tokens (JWT)",
+      "pattern": "\\beyJ[a-zA-Z0-9_\\-]{10,}\\.eyJ[a-zA-Z0-9_\\-]{10,}\\.[a-zA-Z0-9_\\-]+\\b",
+      "replacement": "[REDACTED_JWT]"
+    },
+    {
+      "name": "Private Key Headers",
+      "pattern": "-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----",
+      "replacement": "[REDACTED_PRIVATE_KEY_BLOCK]"
+    }
+  ],
+  "allowed_apps": [
+    "*"
+  ],
+  "allowed_urls": [
+    "*"
+  ]
+}

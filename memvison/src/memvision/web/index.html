@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="mem-vision-mcp: 100% open-source local-first continuous desktop memory capture and AI synthesis layer">
+  <title>mem-vision-mcp | Desktop Memory Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- Background Glow & Grid Canvas -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <div class="app-layout">
+    <!-- Top Navigation & Status Bar -->
+    <header class="app-header">
+      <div class="brand-container">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none">
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>mem-vision<span class="gradient-text">-mcp</span></h1>
+          <span class="badge-tag">Local Desktop Memory</span>
+        </div>
+      </div>
+
+      <!-- Live Engine Metrics -->
+      <div class="stats-ribbon" id="stats-ribbon">
+        <div class="stat-pill" title="Total Captures in SQLite WAL database">
+          <span class="stat-dot green-pulse"></span>
+          <span class="stat-label">Captures:</span>
+          <span class="stat-val" id="stat-total-captures">--</span>
+        </div>
+        <div class="stat-pill" title="Database Size on Disk">
+          <svg class="stat-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+            <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
+            <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+          </svg>
+          <span class="stat-label">DB Size:</span>
+          <span class="stat-val" id="stat-db-size">--</span>
+        </div>
+        <div class="stat-pill" title="Active Privacy Gatekeeper Rules">
+          <svg class="stat-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <span class="stat-label">Privacy Gate:</span>
+          <span class="stat-val text-green" id="stat-privacy-status">Active</span>
+        </div>
+        <div class="stat-pill" title="Hardware Accelerated OCR Engine">
+          <svg class="stat-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 7 4 4 20 4 20 7"/>
+            <line x1="9" y1="20" x2="15" y2="20"/>
+            <line x1="12" y1="4" x2="12" y2="20"/>
+          </svg>
+          <span class="stat-label">OCR:</span>
+          <span class="stat-val text-cyan">WinRT Native</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="header-actions">
+        <button id="btn-toggle-autorefresh" class="btn btn-secondary btn-icon-only active" title="Toggle Auto-refresh (every 4s)">
+          <span class="live-indicator"></span>
+          <span>Live</span>
+        </button>
+        <button id="btn-open-chat" class="btn btn-primary" title="Open AI Memory Chat Assistant">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>Ask AI</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <div class="workspace-container">
+      
+      <!-- Primary Stream Panel -->
+      <main class="memory-stream-panel">
+        
+        <!-- Search & Filter Bar -->
+        <section class="search-toolbar">
+          <div class="search-input-wrapper">
+            <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input 
+              type="search" 
+              id="search-input" 
+              placeholder="Search desktop memory by keyword, OCR text, window title, or URL..." 
+              autocomplete="off"
+            >
+            <span id="search-clear-btn" class="search-clear hidden">&times;</span>
+          </div>
+
+          <div class="filter-chips" id="filter-chips">
+            <button class="chip active" data-filter="all">All Apps</button>
+            <button class="chip" data-filter="chrome.exe">Chrome</button>
+            <button class="chip" data-filter="brave.exe">Brave</button>
+            <button class="chip" data-filter="msedge.exe">Edge</button>
+            <button class="chip" data-filter="code.exe">VS Code</button>
+            <button class="chip" data-filter="powershell.exe">Terminal</button>
+          </div>
+        </section>
+
+        <!-- Stream Results Header -->
+        <div class="stream-header">
+          <div class="stream-title-group">
+            <h2 id="stream-title">Recent Timeline</h2>
+            <span id="results-count" class="count-tag">Loading...</span>
+            <div class="view-mode-toggle" id="view-mode-toggle">
+              <button class="view-btn active" data-mode="timeline" id="btn-view-timeline">Timeline</button>
+              <button class="view-btn" data-mode="sessions" id="btn-view-sessions">Focus Sessions</button>
+            </div>
+          </div>
+          <div class="stream-controls">
+            <span id="last-updated-text" class="text-muted">Updated just now</span>
+          </div>
+        </div>
+
+        <!-- Captures Grid / Feed -->
+        <div class="captures-grid" id="captures-grid">
+          <!-- Dynamically populated by app.js -->
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading desktop memories...</p>
+          </div>
+        </div>
+
+      </main>
+
+      <!-- AI Memory Chat Sidebar Panel -->
+      <aside class="chat-sidebar" id="chat-sidebar">
+        <div class="chat-header">
+          <div class="chat-title-group">
+            <div class="ai-avatar">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+            </div>
+            <div>
+              <h3>Memory AI Assistant</h3>
+              <span id="ai-model-badge" class="ai-model-tag">OmniRoute free-stack</span>
+            </div>
+          </div>
+          <button id="btn-close-chat" class="btn-icon" aria-label="Close chat">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Chat Conversation Messages -->
+        <div class="chat-messages" id="chat-messages">
+          <div class="message assistant-message welcome-msg">
+            <div class="msg-bubble">
+              <p>👋 Hello! I have continuous access to your desktop memory, OCR text, and visited URLs.</p>
+              <p class="text-sm">Ask me questions about your past activity, like:</p>
+              <div class="chat-prompts">
+                <button class="prompt-pill" onclick="sendSuggestedPrompt(this)">What was that Meta Model API link?</button>
+                <button class="prompt-pill" onclick="sendSuggestedPrompt(this)">What was I doing in VS Code recently?</button>
+                <button class="prompt-pill" onclick="sendSuggestedPrompt(this)">Show my latest terminal commands</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Form -->
+        <form class="chat-input-form" id="chat-form">
+          <div class="input-row">
+            <textarea 
+              id="chat-textarea" 
+              placeholder="Ask anything about what you saw or worked on..." 
+              rows="1"
+              required
+            ></textarea>
+            <button type="submit" id="btn-send-chat" class="btn btn-send" aria-label="Send query">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </div>
+          <div class="chat-input-footer">
+            <span class="text-xs text-muted">Powered by local FTS5 semantic ranking + LLM synthesis</span>
+          </div>
+        </form>
+      </aside>
+
+    </div>
+  </div>
+
+  <!-- Detail Modal for Inspecting a Capture -->
+  <dialog id="capture-modal" class="capture-modal" closedby="any">
+    <div class="modal-content">
+      <header class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-app-badge" id="modal-app-badge">Application</span>
+          <h3 id="modal-window-title">Window Title</h3>
+        </div>
+        <button id="btn-close-modal" class="btn-icon" aria-label="Close modal">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </header>
+
+      <div class="modal-body">
+        <!-- Left: Image Preview -->
+        <div class="modal-image-col">
+          <div class="image-wrapper" id="modal-image-wrapper">
+            <img id="modal-screenshot-img" src="" alt="Capture screenshot" loading="lazy">
+          </div>
+          <div class="modal-metadata-strip">
+            <div class="meta-item">
+              <span class="meta-k">Capture ID:</span>
+              <span class="meta-v" id="modal-capture-id">#--</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-k">Timestamp:</span>
+              <span class="meta-v" id="modal-timestamp">--</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-k">Perceptual Hash:</span>
+              <span class="meta-v font-mono" id="modal-phash">--</span>
+            </div>
+          </div>
+          <div class="modal-url-container hidden" id="modal-url-container">
+            <span class="meta-k">Active Tab URL:</span>
+            <a id="modal-url-link" href="#" target="_blank" rel="noopener noreferrer" class="external-link">
+              <span id="modal-url-text"></span>
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
+          </div>
+        </div>
+
+        <!-- Right: Extracted OCR Text -->
+        <div class="modal-ocr-col">
+          <div class="ocr-header">
+            <h4>Extracted OCR Text (<span id="modal-ocr-char-count">0</span> chars)</h4>
+            <button id="btn-copy-ocr" class="btn btn-secondary btn-sm" title="Copy text to clipboard">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              <span>Copy Text</span>
+            </button>
+          </div>
+          <div class="ocr-text-scrollbox">
+            <pre id="modal-ocr-text" class="ocr-pre"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>
