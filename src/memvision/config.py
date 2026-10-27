@@ -101,11 +101,20 @@ class AppConfig:
 
 def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
     """Convenience helper to load AppConfig from path or default location."""
+    project_root = Path(__file__).resolve().parent.parent.parent
     if config_path:
-        return AppConfig.from_json(config_path)
+        p = Path(config_path)
+        if not p.is_file() and not p.is_absolute():
+            p = project_root / p
+        return AppConfig.from_json(p)
 
     default_path = Path("config/default_config.json")
     if default_path.is_file():
         return AppConfig.from_json(default_path)
 
+    project_root_default = project_root / "config" / "default_config.json"
+    if project_root_default.is_file():
+        return AppConfig.from_json(project_root_default)
+
     return AppConfig()
+

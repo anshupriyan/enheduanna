@@ -2,7 +2,8 @@
 
 > **A 100% open-source, local-first continuous desktop memory layer that captures screen context, extracts window and browser tab URLs, runs on-device OCR, stores structured history in SQLite with FTS5 search, and exposes this memory via a glassmorphic Web Dashboard and Model Context Protocol (MCP) tools for AI agents.**
 
-Built for the **Meta Global AI Developer Hackathon**. 100% open-source with permissive licenses (MIT, BSD, Apache 2.0). Zero closed-source SDKs, zero telemetry, zero mandatory cloud dependencies.
+Built for the **Meta Global AI Developer Hackathon**. 100% open-source with permissive licenses (MIT, BSD, Apache 2.0). Zero closed-source SDKs, zero telemetry, zero mandatory cloud dependencies.  
+See [`META_MODEL_API_REFERENCE.md`](file:///c:/meta%20hackathon/memvison/META_MODEL_API_REFERENCE.md) for full Meta Model API, Muse models, and hackathon documentation.
 
 ---
 

@@ -184,6 +184,20 @@ class CaptureEngine:
         ocr_text = self.ocr_engine.extract_text(img)
         ocr_duration_ms = (time.perf_counter() - ocr_start) * 1000
 
+        # 7.1 Text-Level Privacy Gating (Redact API keys, tokens, credentials)
+        sanitized_ocr, ocr_redact_count, ocr_matched_rules = self.privacy_gate.redact_text(ocr_text)
+        sanitized_title, title_redact_count, title_matched_rules = self.privacy_gate.redact_text(ctx.window_title)
+        total_redactions = ocr_redact_count + title_redact_count
+        all_matched_rules = list(set(ocr_matched_rules + title_matched_rules))
+
+        if total_redactions > 0:
+            logger.info(
+                "🔒 CONTENT REDACTION: Redacted %d sensitive token(s) [%s] from capture of '%s'.",
+                total_redactions,
+                ", ".join(all_matched_rules),
+                ctx.app_name,
+            )
+
         # 8. Save preview image to disk
         # If any windows were masked, stamp sleek privacy badge on the saved preview
         now = datetime.now(timezone.utc)
@@ -200,17 +214,18 @@ class CaptureEngine:
         saved_path, thumb_w, thumb_h = self.capturer.save_image(preview_img, screenshot_file, downscale_for_storage=True)
 
         # 9. Persist to SQLite & FTS5
+        is_redacted_flag = 1 if (total_redactions > 0 or bool(blocked_windows)) else 0
         record = CaptureRecord(
             timestamp=now.isoformat(),
             app_name=ctx.app_name,
-            window_title=ctx.window_title,
+            window_title=sanitized_title,
             url=ctx.url,
-            ocr_text=ocr_text,
+            ocr_text=sanitized_ocr,
             screenshot_path=saved_path,
             phash=hash_str,
             width=img.width,
             height=img.height,
-            is_redacted=1 if (blocked_windows and not ocr_text.strip()) else 0,
+            is_redacted=is_redacted_flag,
             metadata={
                 "change_distance": distance,
                 "ocr_duration_ms": round(ocr_duration_ms, 2),
@@ -219,20 +234,25 @@ class CaptureEngine:
                 "storage_dimensions": f"{thumb_w}x{thumb_h}",
                 "spatial_masked_windows": list(set(masked_names)),
                 "is_spatially_masked": bool(blocked_windows),
+                "content_redacted_count": total_redactions,
+                "content_redacted_rules": all_matched_rules,
             },
         )
         record_id = self.storage.save_capture(record)
         record.id = record_id
 
+        redact_info = f" [REDACTED: {total_redactions} tokens]" if total_redactions > 0 else ""
+        mask_info = f" [MASKED: {', '.join(set(masked_names))}]" if masked_names else ""
         logger.info(
-            "📸 CAPTURE #%d: App='%s' | Title='%.40s...' | URL=%s | OCR=%d chars (%.1fms)%s",
+            "📸 CAPTURE #%d: App='%s' | Title='%.40s...' | URL=%s | OCR=%d chars (%.1fms)%s%s",
             record_id,
             ctx.app_name,
-            ctx.window_title,
+            sanitized_title,
             ctx.url or "None",
-            len(ocr_text),
+            len(sanitized_ocr),
             ocr_duration_ms,
-            f" [MASKED: {', '.join(set(masked_names))}]" if masked_names else "",
+            mask_info,
+            redact_info,
         )
 
         for cb in self._step_callbacks:
@@ -248,12 +268,13 @@ class CaptureEngine:
         self._running = True
         interval = max(0.2, self.config.capture.interval_seconds)
 
-        def _sig_handler(sig, frame):
-            logger.info("Termination signal received. Stopping capture engine gracefully...")
-            self.stop()
-
-        signal.signal(signal.SIGINT, _sig_handler)
-        signal.signal(signal.SIGTERM, _sig_handler)
+        import threading
+        if threading.current_thread() is threading.main_thread():
+            try:
+                signal.signal(signal.SIGINT, _sig_handler)
+                signal.signal(signal.SIGTERM, _sig_handler)
+            except Exception:
+                pass
 
         logger.info("mem-vision-mcp capture engine started. Polling every %.1fs (hash threshold=%d)...",
                     interval, self.config.capture.hash_threshold)

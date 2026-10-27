@@ -130,6 +130,21 @@ def cmd_privacy_test(args: argparse.Namespace) -> None:
     print("-" * 45)
 
 
+def cmd_sanitize(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    storage = MemoryStorage(config.storage.database_path)
+    gatekeeper = PrivacyGatekeeper(config.privacy.config_path, enabled=True)
+    print("\n🛡️  mem-vision-mcp Privacy Sanitization")
+    print("=" * 60)
+    print(f"Scanning database {config.storage.database_path} for sensitive keys/secrets...")
+    res = storage.sanitize_database(gatekeeper)
+    print(f"  • Total captures scanned:     {res['total_scanned']}")
+    print(f"  • Records sanitized:         {res['records_sanitized']}")
+    print(f"  • Sensitive tokens redacted: {res['tokens_redacted']}")
+    print("=" * 60)
+    print("✅ All historical memory records sanitized and FTS5 search index synchronized!\n")
+
+
 def cmd_open(args: argparse.Namespace) -> None:
     import os
     config = load_config(args.config)
@@ -222,6 +237,12 @@ def cmd_mcp(args: argparse.Namespace) -> None:
 def cmd_ui(args: argparse.Namespace) -> None:
     from memvision.web_server import run_web_server
     config = load_config(args.config)
+    if getattr(args, "capture", True):
+        import threading
+        capture_engine = CaptureEngine(config)
+        capture_thread = threading.Thread(target=capture_engine.run, daemon=True, name="CaptureLoop")
+        capture_thread.start()
+        print("  📸 Continuous capture loop started in background thread.")
     run_web_server(config, host=args.host, port=args.port, open_browser=not args.no_browser)
 
 
@@ -326,9 +347,13 @@ def main() -> None:
     ui_parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind to")
     ui_parser.add_argument("--port", type=int, default=8765, help="Port to listen on (default: 8765)")
     ui_parser.add_argument("--no-browser", action="store_true", help="Do not open browser automatically")
+    ui_parser.add_argument("--no-capture", dest="capture", action="store_false", help="Run dashboard only without background capture")
 
     # mcp-config command
     subparsers.add_parser("mcp-config", help="Display MCP setup snippet for Claude Desktop and Cursor")
+
+    # sanitize / redact command
+    subparsers.add_parser("sanitize", aliases=["redact"], help="Sanitize existing database by redacting sensitive keys and tokens")
 
     # sessions / episodes command
     sess_parser = subparsers.add_parser("sessions", aliases=["episodes"], help="List clustered task sessions and focus episodes")
@@ -357,6 +382,8 @@ def main() -> None:
         cmd_stats(args)
     elif args.command == "privacy-test":
         cmd_privacy_test(args)
+    elif args.command in ("sanitize", "redact"):
+        cmd_sanitize(args)
     elif args.command == "open":
         cmd_open(args)
     elif args.command == "latest":

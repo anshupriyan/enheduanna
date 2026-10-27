@@ -10,10 +10,11 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Ensure parent directory is in sys.path when executed directly
 _src_dir = str(Path(__file__).resolve().parent.parent)
+_project_root = Path(__file__).resolve().parent.parent.parent
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
@@ -30,9 +31,15 @@ class MCPServer:
     Standard MCP (Model Context Protocol) JSON-RPC 2.0 server over stdio.
     """
 
-    def __init__(self, db_path: str = "data/memvision.db"):
+    def __init__(self, db_path: Optional[str | Path] = None):
         self.config = load_config()
-        self.storage = MemoryStorage(db_path, self.config.storage.enable_fts)
+        if db_path is None:
+            configured_db = Path(self.config.storage.database_path)
+            resolved_db = configured_db if configured_db.is_absolute() else _project_root / configured_db
+        else:
+            p = Path(db_path)
+            resolved_db = p if p.is_absolute() else _project_root / p
+        self.storage = MemoryStorage(resolved_db, self.config.storage.enable_fts)
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         """Returns the schemas of the tools exposed to AI agents."""
@@ -313,5 +320,6 @@ class MCPServer:
 
 
 if __name__ == "__main__":
-    server = MCPServer()
+    db_arg = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None
+    server = MCPServer(db_path=db_arg)
     server.run_stdio()

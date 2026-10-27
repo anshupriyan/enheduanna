@@ -404,6 +404,89 @@ class MemoryStorage:
         logger.info("Cleaned up %d captures older than %d days.", deleted_count, retention_days)
         return deleted_count
 
+    def sanitize_database(self, privacy_gate: Optional[Any] = None) -> Dict[str, Any]:
+        """
+        Retroactively scans all captures in the SQLite database and sanitizes
+        plaintext API keys, tokens, credentials, and blocked window titles.
+        Updates captures and synchronizes FTS5 full-text index automatically.
+        """
+        if privacy_gate is None:
+            from memvision.privacy import PrivacyGatekeeper
+            privacy_gate = PrivacyGatekeeper()
+
+        updated_count = 0
+        total_tokens_redacted = 0
+        total_scanned = 0
+
+        with self.connection() as conn:
+            rows = conn.execute("SELECT id, app_name, window_title, url, ocr_text, is_redacted, metadata FROM captures;").fetchall()
+            total_scanned = len(rows)
+
+            for row in rows:
+                rec_id = row["id"]
+                app = row["app_name"] or ""
+                title = row["window_title"] or ""
+                url = row["url"] or ""
+                ocr = row["ocr_text"] or ""
+                curr_redacted = row["is_redacted"]
+                meta = {}
+                if row["metadata"]:
+                    try:
+                        meta = json.loads(row["metadata"])
+                    except Exception:
+                        meta = {}
+
+                # 1. Check if window title matches blocked titles (e.g. *omniroute*, *combo*.txt)
+                decision = privacy_gate.evaluate(app_name=app, window_title=title, url=url)
+                title_blocked = not decision.is_allowed
+
+                # 2. Redact text
+                sanitized_ocr, ocr_count, ocr_rules = privacy_gate.redact_text(ocr)
+                sanitized_title, title_count, title_rules = privacy_gate.redact_text(title)
+
+                row_redactions = ocr_count + title_count
+                should_update = False
+
+                if title_blocked and "[REDACTED BY PRIVACY RULE" not in sanitized_ocr:
+                    # If window title is a blocked secret file, purge its OCR completely!
+                    sanitized_ocr = f"[REDACTED BY PRIVACY RULE: {decision.reason}]"
+                    sanitized_title = f"[REDACTED_FILE: {decision.matched_rule}]"
+                    row_redactions += 1
+                    should_update = True
+
+                if row_redactions > 0 or sanitized_ocr != ocr or sanitized_title != title or (title_blocked and curr_redacted != 1):
+                    should_update = True
+
+                if should_update:
+                    total_tokens_redacted += row_redactions
+                    updated_count += 1
+                    meta["content_redacted_count"] = meta.get("content_redacted_count", 0) + row_redactions
+                    meta["retroactive_sanitized"] = True
+
+                    conn.execute(
+                        """
+                        UPDATE captures
+                        SET window_title = ?,
+                            ocr_text = ?,
+                            is_redacted = 1,
+                            metadata = ?
+                        WHERE id = ?;
+                        """,
+                        (sanitized_title, sanitized_ocr, json.dumps(meta), rec_id)
+                    )
+
+            conn.commit()
+
+        logger.info(
+            "Retroactive sanitization complete: scanned %d captures, sanitized %d records (%d tokens redacted).",
+            total_scanned, updated_count, total_tokens_redacted
+        )
+        return {
+            "total_scanned": total_scanned,
+            "records_sanitized": updated_count,
+            "tokens_redacted": total_tokens_redacted,
+        }
+
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> CaptureRecord:
         meta = None

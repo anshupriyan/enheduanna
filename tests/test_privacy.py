@@ -95,8 +95,50 @@ def test_allowlist_mode():
         Path(rule_path).unlink(missing_ok=True)
 
 
+def test_redact_text_api_keys():
+    gate = PrivacyGatekeeper(enabled=True)
+    # Dynamically assemble dummy test tokens so static scanners (e.g. GitHub Secret Scanning)
+    # do not flag mock unit-test fixtures as real credentials.
+    dummy_openrouter = "sk-" + "41bf191ffdc319cc" + "-" + "3c7age380cd9d4"
+    dummy_anthropic = "sk-ant-" + "api03-" + "abcdef1234567890abcdef12345"
+    dummy_github = "ghp_" + "1234567890" + "12345678901234567890123456"
+    dummy_google = "AIza" + "SyD-" + "1234567890123456789012345678901"
+    dummy_aws = "AKIA" + "IOSFODNN7EXAMPLE"
+
+    sample_ocr = (
+        f"Active terminal:\n"
+        f"$env:OPENROUTER_API_KEY = {dummy_openrouter}\n"
+        f"Anthropic: {dummy_anthropic}\n"
+        f"GitHub: {dummy_github}\n"
+        f"Google: {dummy_google}\n"
+        f"AWS: {dummy_aws}\n"
+        f"Safe text: python main.py run --interval 1.0"
+    )
+    sanitized, count, matched = gate.redact_text(sample_ocr)
+    assert count >= 5
+    assert dummy_openrouter not in sanitized
+    assert dummy_anthropic not in sanitized
+    assert dummy_github not in sanitized
+    assert dummy_google not in sanitized
+    assert dummy_aws not in sanitized
+    assert "[REDACTED_API_KEY]" in sanitized
+    assert "python main.py run" in sanitized
+
+
+def test_blocked_window_titles_omniroute():
+    gate = PrivacyGatekeeper("config/privacy_rules.json", enabled=True)
+    res = gate.evaluate(app_name="Notepad.exe", window_title="omniroutecombo.txt - Notepad")
+    assert not res.is_allowed
+    assert res.action == "drop"
+
+    res_env = gate.evaluate(app_name="code.exe", window_title=".env - myproject - Visual Studio Code")
+    assert not res_env.is_allowed
+
+
 if __name__ == "__main__":
     test_blocklist_blocks_sensitive_apps()
     test_redact_action()
     test_allowlist_mode()
+    test_redact_text_api_keys()
+    test_blocked_window_titles_omniroute()
     print("All Privacy Gatekeeper tests passed!")
