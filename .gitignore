@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+ENV/
+
+# Python compiled
+__pycache__/
+*.py[cod]
+*.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Local databases & screenshots
+memvison/data/*.db
+memvison/data/*.db-wal
+memvison/data/*.db-shm
+memvison/data/screenshots/*
+!memvison/data/screenshots/.gitkeep
+
+# Environment & Secrets
+.env
+.env.local
+*.local
+
+# IDE & Editor caches
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Antigravity artifacts
+.agents/
+
+# OS artifacts
+Thumbs.db
+Desktop.ini
+.DS_Store
