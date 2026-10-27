@@ -9,7 +9,7 @@
        |/ /___/ / / / / / /  __/ /_/ / /_/ / /_/ / / / / / / / /_/ /        |
        |/_____/_/ /_/_/ /_/\___/\__,_/\__,_/\__,_/_/ /_/_/ /_/\__,_/         |
        |                                                                    |
-       |     :::  𒂗 • 𒃶 • 𒌌 • 𒀭 • 𒈾  :::  UR, MESOPOTAMIA • c. 2300 BCE  :::     |
+       |     :::  ?? • ?? • ?? • ?? • ??  :::  UR, MESOPOTAMIA • c. 2300 BCE  :::     |
        |                                                                    |
        |   << THE WORLD''S FIRST AUTHOR REBORN AS AN AUTONOMOUS AGENT >>     |
        |====================================================================|
@@ -45,7 +45,7 @@
 
 ---
 
-## ◈ Mythos & Concept
+## ? Mythos & Concept
 
 Over **4,300 years ago**, in the ancient Sumerian city of Ur, **Enheduanna** became the **first recorded author in human history**. By pressing her stylus into wet clay and signing her work, she established the very concept of capturing conscious human experience into permanent, structured memory.
 
@@ -57,34 +57,34 @@ Modern desktop AI agents operate with complete amnesia: they cannot perceive wha
 
 ---
 
-## ◈ Dual-Faculty Architecture
+## ? Dual-Faculty Architecture
 
 ```
-                       ┌─────────────────────────────────────┐
-                       │        LLM / Desktop Agent          │
-                       │     (Llama / Claude / Custom)       │
-                       └──────────────────┬──────────────────┘
-                                          │
-                   ┌──────────────────────┴──────────────────────┐
-                   │                                             │
-                   ▼ (Model Context Protocol)                    ▼ (Model Context Protocol)
-        ┌─────────────────────────────────────┐       ┌─────────────────────────────────────┐
-        │             memvison/               │       │            cli-bridge/              │
-        │        [THE MEMORY SCRIBE]          │       │         [THE CLI OPERATOR]          │
-        ├─────────────────────────────────────┤       ├─────────────────────────────────────┤
-        │ + Continuous Native WinRT OCR       │       │ + Policy-Engine (allow/ask/deny)    │
-        │ + Spatial Blackout Curtains         │       │ + Sandboxed Shell Execution         │
-        │ + Zero-Leak Regex Secret Scrubbing  │       │ + Interactive Session Approvals     │
-        │ + Video & Animation Suppression     │       │ + JIT Ephemeral Path Access Grants  │
-        │ + Incremental Draft Collapsing      │       │ + CWE-59 Symlink Escape Hardened    │
-        │ + Temporal Episode Clustering       │       │ + Audit Trail & Journal Logging     │
-        │ + SQLite WAL + FTS5 BM25 Search     │       │ + JSON-RPC 2.0 stdio MCP Server     │
-        └─────────────────────────────────────┘       └─────────────────────────────────────┘
+                       +-------------------------------------+
+                       ¦        LLM / Desktop Agent          ¦
+                       ¦     (Llama / Claude / Custom)       ¦
+                       +-------------------------------------+
+                                          ¦
+                   +---------------------------------------------+
+                   ¦                                             ¦
+                   ? (Model Context Protocol)                    ? (Model Context Protocol)
+        +-------------------------------------+       +-------------------------------------+
+        ¦             memvison/               ¦       ¦            cli-bridge/              ¦
+        ¦        [THE MEMORY SCRIBE]          ¦       ¦         [THE CLI OPERATOR]          ¦
+        +-------------------------------------¦       +-------------------------------------¦
+        ¦ + Continuous Native WinRT OCR       ¦       ¦ + Policy-Engine (allow/ask/deny)    ¦
+        ¦ + Spatial Blackout Curtains         ¦       ¦ + Sandboxed Shell Execution         ¦
+        ¦ + Zero-Leak Regex Secret Scrubbing  ¦       ¦ + Interactive Session Approvals     ¦
+        ¦ + Video & Animation Suppression     ¦       ¦ + JIT Ephemeral Path Access Grants  ¦
+        ¦ + Incremental Draft Collapsing      ¦       ¦ + CWE-59 Symlink Escape Hardened    ¦
+        ¦ + Temporal Episode Clustering       ¦       ¦ + Audit Trail & Journal Logging     ¦
+        ¦ + SQLite WAL + FTS5 BM25 Search     ¦       ¦ + JSON-RPC 2.0 stdio MCP Server     ¦
+        +-------------------------------------+       +-------------------------------------+
 ```
 
 ---
 
-## ◈ System Faculties
+## ? System Faculties
 
 | Faculty | Directory | Role | Core Innovations |
 | :--- | :--- | :--- | :--- |
@@ -93,7 +93,7 @@ Modern desktop AI agents operate with complete amnesia: they cannot perceive wha
 
 ---
 
-## ◈ Privacy & Stability Guarantees
+## ? Privacy & Stability Guarantees
 
 > [!NOTE]
 > **100% Local-First Operation**: Screenshots, OCR indexes, SQLite databases, and terminal actions **never leave your local machine**. There are no external cloud syncs, no telemetry beacons, and zero external subscriptions required.
@@ -115,7 +115,7 @@ Typing a document or code normally produces dozens of fragmented snapshots (e.g.
 
 ---
 
-## ◈ Quick Start
+## ? Quick Start
 
 ### System Requirements
 - **Windows 10 / 11** (for hardware-accelerated WinRT OCR)
@@ -145,15 +145,15 @@ Add both engines to your configuration file (e.g. `%APPDATA%\Claude\claude_deskt
 {
   "mcpServers": {
     "enheduanna-scribe": {
-      "command": "C:/meta hackathon/memvison/.venv/Scripts/python.exe",
-      "args": ["C:/meta hackathon/memvison/src/memvision/mcp_server.py"]
+      "command": "<REPO_ROOT>/memvison/.venv/Scripts/python.exe",
+      "args": ["<REPO_ROOT>/memvison/src/memvision/mcp_server.py"]
     },
     "enheduanna-operator": {
       "command": "node",
       "args": [
-        "C:/meta hackathon/cli-bridge/build/index.js",
+        "<REPO_ROOT>/cli-bridge/build/index.js",
         "--policy",
-        "C:/meta hackathon/cli-bridge/policy.json"
+        "<REPO_ROOT>/cli-bridge/policy.json"
       ]
     }
   }
@@ -162,7 +162,7 @@ Add both engines to your configuration file (e.g. `%APPDATA%\Claude\claude_deskt
 
 ---
 
-## ◈ Inference & Model Integration
+## ? Inference & Model Integration
 
 Enheduanna operates as a client-agnostic MCP bridge. It natively supports any modern LLM via standard JSON-RPC 2.0 tool definitions:
 
@@ -175,7 +175,7 @@ For protocol specifications and API wire details, see:
 
 ---
 
-## ◈ Verification & Test Telemetry
+## ? Verification & Test Telemetry
 
 ```bash
 # Run Scribe stability, privacy & OCR unit tests (10/10 passing in 0.26s)
@@ -187,5 +187,5 @@ cd cli-bridge && npm test
 
 ---
 
-## ◈ License
+## ? License
 Released under the **MIT License**.
