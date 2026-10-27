@@ -1,5 +1,7 @@
 ﻿<div align="center">
 
+<img src="assets/enheduanna_seal.svg" width="320" alt="The Disk of Enheduanna - Seal of Ur" />
+
 ```text
        .____________________________________________________________________.
        |                                                                    |

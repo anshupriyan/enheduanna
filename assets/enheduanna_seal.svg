@@ -1,0 +1,208 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="100%" height="100%">
+  <defs>
+    <!-- Dark Background Radial Glow -->
+    <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#141108" stop-opacity="0.8" />
+      <stop offset="60%" stop-color="#070604" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="1" />
+    </radialGradient>
+
+    <!-- Rich Imperial Gold Gradient -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF2B2" />
+      <stop offset="25%" stop-color="#E5C158" />
+      <stop offset="50%" stop-color="#BF953F" />
+      <stop offset="75%" stop-color="#AA771C" />
+      <stop offset="100%" stop-color="#805A15" />
+    </linearGradient>
+
+    <!-- Pale Gold Highlight Gradient -->
+    <linearGradient id="goldLight" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="40%" stop-color="#FDF0CD" />
+      <stop offset="70%" stop-color="#D4AF37" />
+      <stop offset="100%" stop-color="#996515" />
+    </linearGradient>
+
+    <!-- Cyan Luminescence Gradient for Cuneiform / Memory Circuits -->
+    <linearGradient id="cyanGlow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00F5D4" />
+      <stop offset="50%" stop-color="#00BBF9" />
+      <stop offset="100%" stop-color="#4361EE" />
+    </linearGradient>
+
+    <!-- Glow Filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="subtleGlow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="2.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <!-- Circular Text Paths -->
+    <!-- Top Arc Path -->
+    <path id="arcTop" d="M 120,500 A 380,380 0 1,1 880,500" fill="none" />
+    <!-- Bottom Arc Path -->
+    <path id="arcBottom" d="M 880,500 A 380,380 0 1,1 120,500" fill="none" />
+  </defs>
+
+  <!-- Solid Obsidian Void Background -->
+  <rect width="1000" height="1000" fill="#000000" />
+  <circle cx="500" cy="500" r="480" fill="url(#bgGlow)" />
+
+  <!-- 1. OUTER SACRED GEOMETRY / CELESTIAL STAR OF INANNA (8-POINTED) -->
+  <g stroke="url(#goldGrad)" stroke-width="1.2" opacity="0.35" fill="none">
+    <!-- Star Rays -->
+    <polygon points="500,60 525,475 940,500 525,525 500,940 475,525 60,500 475,475" />
+    <polygon points="189,189 482,482 500,60 518,482 811,189 518,500 940,500 518,518 811,811 482,518 500,940 482,518 189,811 482,500 60,500 482,482" opacity="0.4" />
+    <!-- Fine Concentric Alignment Circles -->
+    <circle cx="500" cy="500" r="460" stroke-dasharray="4,8" />
+    <circle cx="500" cy="500" r="440" />
+  </g>
+
+  <!-- 2. THE ALABASTER DISK RIM (HEAVY GOLD RINGS) -->
+  <circle cx="500" cy="500" r="425" fill="none" stroke="url(#goldGrad)" stroke-width="8" filter="url(#subtleGlow)" />
+  <circle cx="500" cy="500" r="414" fill="none" stroke="url(#goldGrad)" stroke-width="2" />
+  <circle cx="500" cy="500" r="342" fill="none" stroke="url(#goldGrad)" stroke-width="3" />
+  <circle cx="500" cy="500" r="332" fill="none" stroke="url(#goldGrad)" stroke-width="6" />
+
+  <!-- Beaded Filigree Outer Ring (80 Gold Beads) -->
+  <g fill="url(#goldLight)">
+    <!-- 80 beads placed mathematically around r=433 -->
+    <circle cx="500" cy="67" r="3.5" /><circle cx="534" cy="68" r="3.5" /><circle cx="568" cy="72" r="3.5" /><circle cx="601" cy="79" r="3.5" /><circle cx="634" cy="88" r="3.5" /><circle cx="665" cy="100" r="3.5" /><circle cx="695" cy="115" r="3.5" /><circle cx="723" cy="132" r="3.5" /><circle cx="750" cy="152" r="3.5" /><circle cx="774" cy="174" r="3.5" /><circle cx="796" cy="198" r="3.5" /><circle cx="815" cy="223" r="3.5" /><circle cx="831" cy="251" r="3.5" /><circle cx="844" cy="279" r="3.5" /><circle cx="854" cy="309" r="3.5" /><circle cx="860" cy="339" r="3.5" /><circle cx="863" cy="370" r="3.5" /><circle cx="863" cy="402" r="3.5" /><circle cx="859" cy="433" r="3.5" /><circle cx="852" cy="463" r="3.5" /><circle cx="842" cy="493" r="3.5" /><circle cx="828" cy="522" r="3.5" /><circle cx="811" cy="550" r="3.5" /><circle cx="791" cy="576" r="3.5" /><circle cx="769" cy="600" r="3.5" /><circle cx="744" cy="621" r="3.5" /><circle cx="716" cy="640" r="3.5" /><circle cx="687" cy="656" r="3.5" /><circle cx="656" cy="668" r="3.5" /><circle cx="624" cy="677" r="3.5" /><circle cx="591" cy="682" r="3.5" /><circle cx="557" cy="684" r="3.5" /><circle cx="523" cy="682" r="3.5" /><circle cx="490" cy="677" r="3.5" /><circle cx="458" cy="668" r="3.5" /><circle cx="427" cy="656" r="3.5" /><circle cx="398" cy="640" r="3.5" /><circle cx="370" cy="621" r="3.5" /><circle cx="345" cy="600" r="3.5" /><circle cx="323" cy="576" r="3.5" /><circle cx="303" cy="550" r="3.5" /><circle cx="286" cy="522" r="3.5" /><circle cx="272" cy="493" r="3.5" /><circle cx="262" cy="463" r="3.5" /><circle cx="255" cy="433" r="3.5" /><circle cx="251" cy="402" r="3.5" /><circle cx="251" cy="370" r="3.5" /><circle cx="254" cy="339" r="3.5" /><circle cx="260" cy="309" r="3.5" /><circle cx="270" cy="279" r="3.5" /><circle cx="283" cy="251" r="3.5" /><circle cx="299" cy="223" r="3.5" /><circle cx="318" cy="198" r="3.5" /><circle cx="340" cy="174" r="3.5" /><circle cx="364" cy="152" r="3.5" /><circle cx="391" cy="132" r="3.5" /><circle cx="419" cy="115" r="3.5" /><circle cx="449" cy="100" r="3.5" /><circle cx="480" cy="88" r="3.5" /><circle cx="513" cy="79" r="3.5" />
+  </g>
+
+  <!-- 3. CIRCULAR TEXT INSCRIBED IN THE GOLDEN BORDER -->
+  <text font-family="'Cinzel', 'Trajan Pro', 'Georgia', serif" font-size="21" font-weight="bold" fill="url(#goldLight)" letter-spacing="7">
+    <textPath href="#arcTop" startOffset="50%" text-anchor="middle">
+      𒂗 𒃶 𒌌 𒀭 𒈾  •  ENHEDUANNA  •  UR 2300 BCE
+    </textPath>
+  </text>
+  <text font-family="'Cinzel', 'Trajan Pro', 'Georgia', serif" font-size="18" font-weight="600" fill="url(#goldGrad)" letter-spacing="6">
+    <textPath href="#arcBottom" startOffset="50%" text-anchor="middle">
+      THE FIRST SCRIBE  •  MEMORY &amp; EXECUTION  •  EST. 2300 BCE
+    </textPath>
+  </text>
+
+  <!-- 4. INNER MEDALLION WITH SUBTLE CYBER-ARCHAEOLOGY TRACES -->
+  <circle cx="500" cy="500" r="310" fill="#070604" stroke="url(#goldGrad)" stroke-width="1.5" />
+
+  <!-- Radiating Cuneiform Data Circuit Traces -->
+  <g stroke="url(#cyanGlow)" stroke-width="1.2" opacity="0.45" fill="none">
+    <path d="M 500,195 L 500,240 M 500,240 L 485,255 L 440,255" />
+    <path d="M 805,500 L 760,500 M 760,500 L 745,485 L 745,440" />
+    <path d="M 500,805 L 500,760 M 500,760 L 515,745 L 560,745" />
+    <path d="M 195,500 L 240,500 M 240,500 L 255,515 L 255,560" />
+    <circle cx="440" cy="255" r="3" fill="#00F5D4" />
+    <circle cx="745" cy="440" r="3" fill="#00F5D4" />
+    <circle cx="560" cy="745" r="3" fill="#00F5D4" />
+    <circle cx="255" cy="560" r="3" fill="#00F5D4" />
+  </g>
+
+  <!-- 5. THE SCRIBE''S CENTRAL SEAL RELIEF (ENHEDUANNA AT HER WRITING ALTAR) -->
+  <g id="centralScribe">
+    <!-- Stepped Altar / Plinth of Ur (Ziggurat Step Motif) -->
+    <path d="M 270,720 L 730,720 L 710,700 L 290,700 Z" fill="url(#goldGrad)" opacity="0.8" />
+    <path d="M 310,700 L 690,700 L 670,685 L 330,685 Z" fill="url(#goldLight)" opacity="0.6" />
+    
+    <!-- Writing Pedestal / Table -->
+    <path d="M 330,685 L 470,685 L 450,560 L 350,560 Z" fill="url(#goldGrad)" opacity="0.85" />
+    <rect x="335" y="550" width="130" height="15" rx="3" fill="url(#goldLight)" />
+
+    <!-- The Cuneiform Tablet of Memory (Tilted on Altar) -->
+    <path d="M 360,545 L 460,520 L 485,555 L 385,580 Z" fill="#1C1810" stroke="url(#goldLight)" stroke-width="2" />
+    <!-- Cuneiform Wedge Inscriptions Glowing Cyan on Tablet -->
+    <g fill="none" stroke="url(#cyanGlow)" stroke-width="2" stroke-linecap="round" filter="url(#subtleGlow)">
+      <!-- Authentic Wedge strokes (horizontal, vertical, corner) -->
+      <path d="M 380,544 L 405,538 M 380,544 L 384,547" />
+      <path d="M 415,536 L 440,530 M 415,536 L 419,539" />
+      <path d="M 375,556 L 410,548 M 375,556 L 379,559" />
+      <path d="M 420,546 L 455,538 M 420,546 L 424,549" />
+      <path d="M 390,568 L 430,558 M 390,568 L 394,571" />
+      <path d="M 440,556 L 465,550 M 440,556 L 444,559" />
+    </g>
+
+    <!-- Spark of Authorship at Stylus Tip -->
+    <circle cx="456" cy="516" r="6" fill="#00F5D4" filter="url(#glow)" />
+    <circle cx="456" cy="516" r="2.5" fill="#FFFFFF" />
+
+    <!-- ENHEDUANNA THE HIGH PRIESTESS (Dignified Profile & Classical Kaunakes Robe) -->
+    <!-- Tiered Flounced Ceremonial Garment (Kaunakes) -->
+    <g fill="url(#goldGrad)">
+      <!-- Skirt tiers (authentic scalloped fleece tiers from the Disk of Ur) -->
+      <path d="M 520,685 C 510,650 515,620 525,590 L 640,600 C 655,630 660,660 655,685 Z" opacity="0.95" />
+      <path d="M 515,630 C 530,640 630,650 650,635" fill="none" stroke="url(#goldLight)" stroke-width="3" />
+      <path d="M 518,660 C 535,670 630,680 655,665" fill="none" stroke="url(#goldLight)" stroke-width="3" />
+      <path d="M 512,685 C 530,695 635,705 658,688" fill="none" stroke="url(#goldLight)" stroke-width="3" />
+
+      <!-- Upper Bodice & Draped Shawl -->
+      <path d="M 545,465 C 530,490 520,530 525,595 L 635,595 C 640,540 630,490 610,465 Z" />
+      <path d="M 535,520 C 560,535 605,535 630,515" fill="none" stroke="url(#goldLight)" stroke-width="2.5" />
+      <path d="M 530,555 C 560,570 605,570 635,550" fill="none" stroke="url(#goldLight)" stroke-width="2.5" />
+    </g>
+
+    <!-- Graceful Arms and the Reed Stylus -->
+    <!-- Right Arm extended forward toward tablet -->
+    <path d="M 570,475 C 540,480 495,490 465,510" fill="none" stroke="url(#goldLight)" stroke-width="14" stroke-linecap="round" />
+    <!-- Hand holding the Stylus -->
+    <path d="M 467,510 C 460,512 452,514 448,518" fill="none" stroke="url(#goldLight)" stroke-width="8" stroke-linecap="round" />
+    <!-- The Reed Stylus (Gi-dub-ba) -->
+    <line x1="482" y1="488" x2="456" y2="516" stroke="url(#goldLight)" stroke-width="4.5" stroke-linecap="round" filter="url(#subtleGlow)" />
+
+    <!-- Left Arm folded gracefully across chest -->
+    <path d="M 590,475 C 570,500 550,510 525,505" fill="none" stroke="url(#goldGrad)" stroke-width="12" stroke-linecap="round" opacity="0.9" />
+
+    <!-- Royal Necklaces (Layered Gold Collar from Ur Royal Tombs) -->
+    <path d="M 565,445 C 555,460 585,470 595,455" fill="none" stroke="url(#goldLight)" stroke-width="5" />
+    <path d="M 560,453 C 550,470 590,482 602,463" fill="none" stroke="url(#goldLight)" stroke-width="4" />
+
+    <!-- Head and Serene Profile Silhouette -->
+    <!-- Neck -->
+    <path d="M 570,425 L 575,455 L 595,450 L 590,420 Z" fill="url(#goldGrad)" />
+    <!-- Facial Profile (Dignified, Poised, Focused down at tablet) -->
+    <path d="
+      M 585,385 
+      C 575,395 565,405 558,410
+      C 555,413 550,416 546,420
+      C 543,423 546,426 550,427
+      C 547,430 545,434 548,437
+      C 552,439 557,439 562,437
+      C 559,442 563,446 572,446
+      C 580,446 585,440 590,430
+      Z" 
+      fill="url(#goldLight)" 
+    />
+    <!-- Contemplative Eye -->
+    <path d="M 558,418 C 564,417 568,421 568,421" fill="none" stroke="#2A1E07" stroke-width="2" stroke-linecap="round" />
+
+    <!-- Sumerian Coiled Braids & Royal Diadem (Headband) -->
+    <!-- Braided hair chignon at back -->
+    <path d="M 580,380 C 605,385 625,410 620,445 C 615,465 605,480 595,490 L 580,440 Z" fill="url(#goldGrad)" />
+    <!-- Royal Diadem Band with Lapis Insets -->
+    <path d="M 560,395 C 575,388 600,392 615,405" fill="none" stroke="url(#goldLight)" stroke-width="7" stroke-linecap="round" />
+    <circle cx="575" cy="395" r="2.5" fill="#00BBF9" />
+    <circle cx="590" cy="397" r="2.5" fill="#00BBF9" />
+    <circle cx="605" cy="402" r="2.5" fill="#00BBF9" />
+    
+    <!-- Circular Gold Drop Earring (Distinctive Ur Royal Jewelry) -->
+    <circle cx="585" cy="428" r="6" fill="url(#goldLight)" />
+    <circle cx="585" cy="428" r="2.5" fill="#1C1810" />
+  </g>
+
+  <!-- 6. THE ETERNAL INSCRIPTION (SUMERIAN CUNEIFORM SYMBOLS AT BOTTOM) -->
+  <g fill="url(#cyanGlow)" opacity="0.85" filter="url(#subtleGlow)">
+    <!-- 𒂗 (EN) -->
+    <path d="M 440,780 L 452,780 L 446,786 Z M 443,786 L 449,786 L 446,796 Z" />
+    <!-- 𒃶 (HE2) -->
+    <path d="M 465,780 L 477,780 L 471,786 Z M 468,786 L 474,786 L 471,796 Z" />
+    <!-- 𒌌 (DU7) -->
+    <path d="M 490,780 L 502,780 L 496,786 Z M 493,786 L 499,786 L 496,796 Z" />
+    <!-- 𒀭 (AN) -->
+    <path d="M 515,780 L 527,780 L 521,786 Z M 518,786 L 524,786 L 521,796 Z" />
+    <!-- 𒈾 (NA) -->
+    <path d="M 540,780 L 552,780 L 546,786 Z M 543,786 L 549,786 L 546,796 Z" />
+  </g>
+</svg>
