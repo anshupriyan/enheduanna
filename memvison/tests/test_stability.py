@@ -51,7 +51,7 @@ def test_evaluate_text_stability_new_window_or_navigation():
     engine = CaptureEngine(AppConfig())
 
     page_1 = "Google Search: Best laptops of 2026 for AI development"
-    page_2 = "GitHub: anshupriyan/Janus - Dual-faced autonomous desktop agent"
+    page_2 = "GitHub: anshupriyan/enheduanna - Autonomous desktop scribe and execution agent"
 
     is_video_static, is_draft, _, _ = engine._evaluate_text_stability(page_1, page_2)
     assert not is_video_static
@@ -68,7 +68,7 @@ def test_storage_update_capture_synchronizes_fts():
             timestamp="2026-10-27T12:00:00Z",
             app_name="Notepad.exe",
             window_title="proposal.txt - Notepad",
-            ocr_text="Paragraph 1: Initial rough draft of Janus proposal.",
+            ocr_text="Paragraph 1: Initial rough draft of Enheduanna proposal.",
             screenshot_path=str(Path(tmpdir) / "shot1.jpg"),
         )
         rec_id = storage.save_capture(rec)
