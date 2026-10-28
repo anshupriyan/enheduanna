@@ -202,6 +202,35 @@
     </div>
   </div>
 
+  <!-- Floating Image Lightbox Modal -->
+  <div id="image-lightbox-modal" class="lightbox-overlay hidden" role="dialog" aria-modal="true" aria-label="Captured Screen Inspection">
+    <div class="lightbox-card">
+      <div class="lightbox-header">
+        <div class="lightbox-title-box">
+          <span class="lightbox-badge">Visual Inspection</span>
+          <span id="lightbox-title" class="lightbox-title">Capture Inspection</span>
+          <span id="lightbox-meta" class="lightbox-submeta"></span>
+        </div>
+        <div class="lightbox-actions">
+          <a id="lightbox-open-external" href="#" target="_blank" rel="noopener noreferrer" class="btn-lightbox-action" title="Open full resolution in new tab">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            <span>Full Res</span>
+          </a>
+          <button id="lightbox-close-btn" class="lightbox-close-btn" title="Close preview (Esc)">&times;</button>
+        </div>
+      </div>
+      <div class="lightbox-body">
+        <div class="lightbox-image-wrapper">
+          <img id="lightbox-img" src="" alt="Captured memory inspection" />
+        </div>
+      </div>
+      <div class="lightbox-footer">
+        <span id="lightbox-footer-info" class="lightbox-footer-info">Memvision MCP Visual Screen Crop</span>
+        <span class="lightbox-footer-tag">Client Cached • 0 LLM Tokens</span>
+      </div>
+    </div>
+  </div>
+
   <script src="vendor/purify.min.js"></script>
   <script src="vendor/marked.min.js"></script>
   <script src="app.js"></script>

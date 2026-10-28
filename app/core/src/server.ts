@@ -182,6 +182,33 @@ export class CoreServer {
         return;
       }
 
+      // GET /api/capture/image/:id (On-demand capture screenshot for lightbox inspection)
+      if (req.method === "GET" && pathname.startsWith("/api/capture/image/")) {
+        const idStr = pathname.substring("/api/capture/image/".length);
+        const captureId = parseInt(idStr, 10);
+        if (isNaN(captureId)) {
+          this.sendError(res, 400, "Invalid capture ID");
+          return;
+        }
+
+        try {
+          const toolRes = await this.mcpManager.executeTool("get_screenshot", { capture_id: captureId, max_px: 1280 });
+          if (toolRes.image) {
+            this.sendJson(res, 200, {
+              success: true,
+              captureId,
+              imageUrl: `data:${toolRes.image.mimeType};base64,${toolRes.image.data}`,
+            });
+            return;
+          }
+          this.sendError(res, 404, `No image found for capture #${captureId}`);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.sendError(res, 500, `Failed to retrieve screenshot: ${msg}`);
+        }
+        return;
+      }
+
       // GET /api/sessions
       if (req.method === "GET" && pathname === "/api/sessions") {
         this.sendJson(res, 200, { sessions: sessionStore.listSessions() });

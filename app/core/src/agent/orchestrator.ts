@@ -397,7 +397,9 @@ export class Orchestrator {
             `event: tool_call_done\ndata: ${JSON.stringify({
               id: tc.id,
               name: tc.name,
+              args: tc.arguments,
               resultPreview: result.content.substring(0, 300),
+              resultContent: result.content,
               isTruncated: Boolean(result.bufferId),
               bufferId: result.bufferId,
               isError: result.isError,

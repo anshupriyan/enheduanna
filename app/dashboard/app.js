@@ -65,6 +65,315 @@
     setInterval(loadCaptureStatus, 6000);
   }
 
+  // Lightbox Controller
+  const lightboxModal = document.getElementById("image-lightbox-modal");
+  const lightboxImg = document.getElementById("lightbox-img");
+  const lightboxTitle = document.getElementById("lightbox-title");
+  const lightboxMeta = document.getElementById("lightbox-meta");
+  const lightboxOpenExt = document.getElementById("lightbox-open-external");
+  const lightboxCloseBtn = document.getElementById("lightbox-close-btn");
+
+  function openLightbox({ imageUrl, title, meta }) {
+    if (!lightboxModal) return;
+    lightboxImg.src = imageUrl;
+    lightboxTitle.textContent = title || "Capture Inspection";
+    lightboxMeta.textContent = meta || "";
+    if (lightboxOpenExt) {
+      lightboxOpenExt.href = imageUrl;
+    }
+    lightboxModal.classList.remove("hidden");
+  }
+
+  function closeLightbox() {
+    if (!lightboxModal) return;
+    lightboxModal.classList.add("hidden");
+    lightboxImg.src = "";
+  }
+
+  if (lightboxCloseBtn) {
+    lightboxCloseBtn.addEventListener("click", closeLightbox);
+  }
+  if (lightboxModal) {
+    lightboxModal.addEventListener("click", (e) => {
+      if (e.target === lightboxModal) closeLightbox();
+    });
+  }
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && lightboxModal && !lightboxModal.classList.contains("hidden")) {
+      closeLightbox();
+    }
+  });
+
+  function formatTime(isoStr) {
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return isoStr;
+    }
+  }
+
+  function extractOcrRecords(toolName, content, args) {
+    if (!content) return [];
+    const records = [];
+    try {
+      let parsed = null;
+      try {
+        parsed = typeof content === "object" ? content : JSON.parse(content);
+      } catch {
+        const jsonStart = content.indexOf("[");
+        const objStart = content.indexOf("{");
+        if (jsonStart !== -1 && (objStart === -1 || jsonStart < objStart)) {
+          const lastBracket = content.lastIndexOf("]");
+          if (lastBracket > jsonStart) {
+            parsed = JSON.parse(content.substring(jsonStart, lastBracket + 1));
+          }
+        } else if (objStart !== -1) {
+          const lastBrace = content.lastIndexOf("}");
+          if (lastBrace > objStart) {
+            parsed = JSON.parse(content.substring(objStart, lastBrace + 1));
+          }
+        }
+      }
+
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (!item || typeof item !== "object") continue;
+          records.push({
+            captureId: item.id || item.capture_id || args?.capture_id,
+            appName: item.app_name || item.app || "Desktop",
+            windowTitle: item.window_title || item.title || "",
+            url: item.url || "",
+            timestamp: item.timestamp || "",
+            snippet: item.snippet || item.ocr_snippet || "",
+            ocrText: item.ocr_text || item.text || item.snippet || item.ocr_snippet || "",
+          });
+        }
+      } else if (parsed && typeof parsed === "object") {
+        records.push({
+          captureId: parsed.id || parsed.capture_id || args?.capture_id,
+          appName: parsed.app_name || parsed.app || "Desktop",
+          windowTitle: parsed.window_title || parsed.title || "",
+          url: parsed.url || "",
+          timestamp: parsed.timestamp || "",
+          snippet: parsed.snippet || parsed.ocr_snippet || "",
+          ocrText: parsed.ocr_text || parsed.text || parsed.snippet || "",
+        });
+        if (Array.isArray(parsed.windows)) {
+          for (const w of parsed.windows) {
+            records.push({
+              captureId: parsed.id,
+              windowId: w.window_id || w.id,
+              appName: w.app_name || w.app,
+              windowTitle: w.title,
+              url: w.url,
+              timestamp: parsed.timestamp,
+              snippet: w.snippet || w.ocr_snippet,
+              ocrText: w.ocr_text || w.snippet || "",
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.debug("Could not parse OCR JSON for references:", err);
+    }
+    return records;
+  }
+
+  function renderReferencesBar(container, visualRefs = [], ocrRefs = []) {
+    if (visualRefs.length === 0 && ocrRefs.length === 0) return null;
+    let existingBar = container.querySelector(".response-references-bar");
+    if (existingBar) {
+      existingBar.remove();
+    }
+
+    const bar = document.createElement("div");
+    bar.className = "response-references-bar";
+
+    const row = document.createElement("div");
+    row.className = "ref-accordions-row";
+
+    // 1. Visual References Accordion (Matte Pastel Lavender-Slate)
+    const visualAcc = document.createElement("details");
+    visualAcc.className = "ref-accordion ref-visual";
+    const vCount = visualRefs.length;
+    visualAcc.innerHTML = `
+      <summary class="ref-summary" title="Click to view screenshots & image crops accessed during this turn">
+        <div class="ref-summary-left">
+          <svg class="ref-summary-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span class="ref-summary-title">Visual References</span>
+          <span class="ref-count-pill">${vCount}</span>
+        </div>
+        <div class="ref-summary-right">
+          <span class="ref-tag-subtle">Client Cached</span>
+          <svg class="ref-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </summary>
+      <div class="ref-body"></div>
+    `;
+
+    const visualBody = visualAcc.querySelector(".ref-body");
+    if (vCount > 0) {
+      const grid = document.createElement("div");
+      grid.className = "ref-gallery-grid";
+      visualRefs.forEach((ref) => {
+        const card = document.createElement("div");
+        card.className = "gallery-thumb-card";
+        card.title = `Click to enlarge ${ref.title || "Capture"}`;
+        card.innerHTML = `
+          <div class="gallery-thumb-wrap">
+            <img src="${ref.imageUrl}" class="gallery-thumb-img" alt="${escapeHtml(ref.title)}" loading="lazy" />
+            <div class="gallery-thumb-zoom-badge">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              <span>Enlarge</span>
+            </div>
+          </div>
+          <div class="gallery-thumb-info">
+            <div class="gallery-thumb-title">${escapeHtml(ref.appName || ref.title || `Capture #${ref.captureId}`)}</div>
+            <div class="gallery-thumb-sub">
+              <span>${escapeHtml(ref.toolName || "crop")}</span>
+              <span>${ref.durationMs ? `${ref.durationMs}ms` : ""}</span>
+            </div>
+          </div>
+        `;
+        card.addEventListener("click", () => {
+          openLightbox({
+            imageUrl: ref.imageUrl,
+            title: ref.appName ? `${ref.appName} — ${ref.title || ""}` : ref.title || `Capture #${ref.captureId}`,
+            meta: `Tool: ${ref.toolName} • Capture #${ref.captureId || "N/A"}${ref.windowId ? ` • Win #${ref.windowId}` : ""}`,
+          });
+        });
+        grid.appendChild(card);
+      });
+      visualBody.appendChild(grid);
+    } else {
+      visualBody.innerHTML = `
+        <div class="ref-empty-state">
+          <svg class="ref-empty-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span>No visual crops requested by model in this turn.</span>
+          <span style="font-size: 10px; color: #64748b;">The model answered using text OCR indexing & window metadata.</span>
+        </div>
+      `;
+    }
+
+    // 2. OCR References Accordion (Matte Pastel Sage-Slate)
+    const ocrAcc = document.createElement("details");
+    ocrAcc.className = "ref-accordion ref-ocr";
+    const oCount = ocrRefs.length;
+    ocrAcc.innerHTML = `
+      <summary class="ref-summary" title="Click to view OCR text blocks & window memory records accessed">
+        <div class="ref-summary-left">
+          <svg class="ref-summary-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span class="ref-summary-title">OCR References</span>
+          <span class="ref-count-pill">${oCount}</span>
+        </div>
+        <div class="ref-summary-right">
+          <span class="ref-tag-subtle">0 Tokens</span>
+          <svg class="ref-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </summary>
+      <div class="ref-body"></div>
+    `;
+
+    const ocrBody = ocrAcc.querySelector(".ref-body");
+    if (oCount > 0) {
+      const list = document.createElement("div");
+      list.className = "ref-ocr-list";
+      ocrRefs.forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "ocr-ref-row";
+        const fullText = item.ocrText || item.snippet || "[No text extracted]";
+        const timeStr = item.timestamp ? formatTime(item.timestamp) : "";
+
+        row.innerHTML = `
+          <div class="ocr-row-header">
+            <div class="ocr-header-left">
+              <span class="ocr-app-badge">${escapeHtml(item.appName || "Desktop")}</span>
+              <span class="ocr-window-title" title="${escapeHtml(item.windowTitle || "")}">${escapeHtml(item.windowTitle || "Window Memory")}</span>
+            </div>
+            <div class="ocr-header-right">
+              ${timeStr ? `<span class="ocr-timestamp">${escapeHtml(timeStr)}</span>` : ""}
+              <button class="ocr-expand-btn" title="Toggle full OCR text">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="ocr-snippet-preview">${escapeHtml(item.snippet || fullText.substring(0, 110))}</div>
+          <div class="ocr-full-box">
+            <div class="ocr-actions-bar">
+              <span>Capture #${item.captureId || item.id || "N/A"}${item.url ? ` • ${escapeHtml(item.url.substring(0, 45))}` : ""} (${fullText.length} chars)</span>
+              <div style="display: flex; gap: 6px;">
+                ${item.captureId || item.id ? `<button class="ocr-btn-action btn-fetch-cap-img" data-cap-id="${item.captureId || item.id}">View Screenshot</button>` : ""}
+                <button class="ocr-btn-action btn-copy-ocr">Copy Text</button>
+              </div>
+            </div>
+            <div class="ocr-content-text">${escapeHtml(fullText)}</div>
+          </div>
+        `;
+
+        const header = row.querySelector(".ocr-row-header");
+        header.addEventListener("click", () => {
+          row.classList.toggle("expanded");
+        });
+
+        const copyBtn = row.querySelector(".btn-copy-ocr");
+        if (copyBtn) {
+          copyBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(fullText);
+            copyBtn.textContent = "Copied!";
+            setTimeout(() => { copyBtn.textContent = "Copy Text"; }, 1500);
+          });
+        }
+
+        const imgBtn = row.querySelector(".btn-fetch-cap-img");
+        if (imgBtn) {
+          imgBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const capId = imgBtn.dataset.capId;
+            imgBtn.textContent = "Loading...";
+            try {
+              const res = await apiFetch(`/api/capture/image/${capId}`);
+              if (res.ok) {
+                const data = await res.json();
+                if (data.imageUrl) {
+                  openLightbox({
+                    imageUrl: data.imageUrl,
+                    title: `${item.appName || "Desktop"} — ${item.windowTitle || `Capture #${capId}`}`,
+                    meta: `Capture #${capId} • ${item.timestamp || ""}`,
+                  });
+                }
+              } else {
+                alert(`Screenshot not stored for Capture #${capId}`);
+              }
+            } catch (err) {
+              alert(`Failed to fetch image: ${err.message}`);
+            } finally {
+              imgBtn.textContent = "View Screenshot";
+            }
+          });
+        }
+
+        list.appendChild(row);
+      });
+      ocrBody.appendChild(list);
+    } else {
+      ocrBody.innerHTML = `
+        <div class="ref-empty-state">
+          <svg class="ref-empty-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span>No OCR memory records accessed in this turn.</span>
+        </div>
+      `;
+    }
+
+    row.appendChild(visualAcc);
+    row.appendChild(ocrAcc);
+    bar.appendChild(row);
+    container.appendChild(bar);
+    return bar;
+  }
+
   // 4. Health & Status
   async function loadHealth() {
     try {
@@ -308,10 +617,19 @@
 
     chatWelcome.style.display = "none";
     let currentTurnContent = null;
+    let turnVisualRefs = [];
+    let turnOcrRefs = [];
+    let seenOcr = new Set();
 
     for (const msg of visibleMessages) {
       if (msg.role === "user") {
+        if (currentTurnContent && (turnVisualRefs.length > 0 || turnOcrRefs.length > 0)) {
+          renderReferencesBar(currentTurnContent, turnVisualRefs, turnOcrRefs);
+        }
         currentTurnContent = null;
+        turnVisualRefs = [];
+        turnOcrRefs = [];
+        seenOcr.clear();
         appendUserMessage(msg.content);
       } else if (msg.role === "assistant") {
         if (!currentTurnContent) {
@@ -350,7 +668,21 @@
         }
       } else if (msg.role === "tool") {
         appendInlineToolResult(msg.tool_call_id, msg.name, msg.content);
+        if (["search_desktop_memory", "get_recent_memory", "get_capture_details", "get_capture_windows"].includes(msg.name)) {
+          const records = extractOcrRecords(msg.name, msg.content, {});
+          for (const rec of records) {
+            const key = `${rec.captureId || rec.id}_${rec.windowTitle || ""}_${rec.appName || ""}`;
+            if (!seenOcr.has(key)) {
+              seenOcr.add(key);
+              turnOcrRefs.push(rec);
+            }
+          }
+        }
       }
+    }
+
+    if (currentTurnContent && (turnVisualRefs.length > 0 || turnOcrRefs.length > 0)) {
+      renderReferencesBar(currentTurnContent, turnVisualRefs, turnOcrRefs);
     }
     messagesStream.scrollTop = messagesStream.scrollHeight;
   }
@@ -725,6 +1057,10 @@
       const decoder = new TextDecoder();
       let buffer = "";
 
+      let turnVisualReferences = [];
+      let turnOcrReferences = [];
+      let seenOcrKeys = new Set();
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -831,6 +1167,42 @@
                 hasImage: data.hasImage,
                 imageUrl: data.imageUrl,
               });
+
+              if (data.hasImage && data.imageUrl) {
+                const capId = data.args?.capture_id || (data.args?.window_id ? `Win #${data.args.window_id}` : "");
+                turnVisualReferences.push({
+                  toolName: data.name,
+                  callId: data.id,
+                  imageUrl: data.imageUrl,
+                  captureId: capId,
+                  windowId: data.args?.window_id,
+                  title: data.args?.capture_id ? `Capture #${data.args.capture_id}` : (data.name === "get_window_crop" ? "Window Crop" : "Screenshot"),
+                  durationMs: data.durationMs,
+                });
+              }
+
+              if (["search_desktop_memory", "get_recent_memory", "get_capture_details", "get_capture_windows"].includes(data.name)) {
+                const records = extractOcrRecords(data.name, data.resultContent || data.resultPreview, data.args);
+                for (const rec of records) {
+                  const key = `${rec.captureId || rec.id}_${rec.windowTitle || ""}_${rec.appName || ""}`;
+                  if (!seenOcrKeys.has(key)) {
+                    seenOcrKeys.add(key);
+                    turnOcrReferences.push(rec);
+                  }
+                }
+              }
+
+              // Cross-reference visual references with OCR metadata
+              for (const vRef of turnVisualReferences) {
+                if (!vRef.appName && vRef.captureId) {
+                  const matched = turnOcrReferences.find((o) => String(o.captureId || o.id) === String(vRef.captureId));
+                  if (matched) {
+                    vRef.appName = matched.appName;
+                    vRef.title = matched.windowTitle || vRef.title;
+                  }
+                }
+              }
+
               progressIndicator.setText(`Finished ${data.name}, processing...`);
             } else if (eventType === "approval_required") {
               const approvalCard = createApprovalCard(data);
@@ -900,6 +1272,7 @@
               }
               activeBubbleText += data.text;
               activeTextBubble.innerHTML = renderMarkdown(activeBubbleText);
+              renderReferencesBar(turnContent, turnVisualReferences, turnOcrReferences);
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "error") {
               finalizeThinking();
@@ -913,6 +1286,7 @@
               finalizeThinking();
               progressIndicator.remove();
               collapseEvidence(turnContent);
+              renderReferencesBar(turnContent, turnVisualReferences, turnOcrReferences);
               await loadSessions();
             }
           } catch {}
