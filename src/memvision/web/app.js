@@ -42,6 +42,8 @@ const elements = {
   modalUrlContainer: document.getElementById('modal-url-container'),
   modalUrlLink: document.getElementById('modal-url-link'),
   modalUrlText: document.getElementById('modal-url-text'),
+  modalFileContainer: document.getElementById('modal-file-container'),
+  modalFileText: document.getElementById('modal-file-text'),
   modalOcrText: document.getElementById('modal-ocr-text'),
   modalOcrCharCount: document.getElementById('modal-ocr-char-count'),
   btnCopyOcr: document.getElementById('btn-copy-ocr'),
@@ -306,6 +308,12 @@ function renderCaptures() {
         </div>
         <div class="card-body">
           <h4 class="card-title" title="${escapeHtml(c.window_title || '')}">${escapeHtml(c.window_title || 'Desktop Activity')}</h4>
+          ${c.file_path ? `
+            <div class="card-file-row" style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: #a0aec0; margin-bottom: 0.35rem; font-family: monospace;" title="${escapeHtml(c.file_path)}">
+              <span>📄</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(c.file_path)}</span>
+            </div>
+          ` : ''}
           ${c.url ? `
             <div class="card-url-row">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
@@ -416,6 +424,14 @@ async function openCaptureDetail(captureId) {
       elements.modalUrlText.textContent = capture.url;
     } else {
       elements.modalUrlContainer.classList.add('hidden');
+    }
+
+    // Resolved File Path
+    if (capture.file_path && elements.modalFileContainer) {
+      elements.modalFileContainer.classList.remove('hidden');
+      elements.modalFileText.textContent = capture.file_path;
+    } else if (elements.modalFileContainer) {
+      elements.modalFileContainer.classList.add('hidden');
     }
 
     // OCR text

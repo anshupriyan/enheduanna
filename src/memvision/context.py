@@ -8,13 +8,21 @@ from __future__ import annotations
 import concurrent.futures
 import ctypes
 from ctypes import wintypes
+import json
 import logging
+import os
+from pathlib import Path
+import re
+import sqlite3
 import time
 from dataclasses import dataclass
 from typing import Optional, Tuple
+import urllib.parse
 import psutil
 
 logger = logging.getLogger(__name__)
+
+_project_root = Path(__file__).resolve().parent.parent.parent
 
 # Known browser process names
 BROWSER_PROCESSES = {
@@ -26,6 +34,26 @@ BROWSER_PROCESSES = {
     "vivaldi.exe",
     "arc.exe",
     "waterfox.exe",
+}
+
+# Known IDE and text editor process names
+IDE_PROCESSES = {
+    "code.exe",
+    "cursor.exe",
+    "windsurf.exe",
+    "vscodium.exe",
+    "antigravity ide.exe",
+    "positron.exe",
+    "devenv.exe",
+    "pycharm64.exe",
+    "idea64.exe",
+    "webstorm64.exe",
+    "clion64.exe",
+    "rider64.exe",
+    "sublime_text.exe",
+    "notepad++.exe",
+    "notepad.exe",
+    "windowsterminal.exe",
 }
 
 
@@ -63,6 +91,9 @@ class WindowContext:
     url: Optional[str] = None
     bounding_box: Optional[Tuple[int, int, int, int]] = None
     is_browser: bool = False
+    file_path: Optional[str] = None
+    workspace_path: Optional[str] = None
+    is_ide: bool = False
 
 
 @dataclass
@@ -89,6 +120,7 @@ class ContextExtractor:
         self._last_url: Optional[str] = None
         self._last_url_time: float = 0.0
         self._pid_name_cache: dict[int, Tuple[str, float]] = {}
+        self._file_path_cache: dict[Tuple[int, str], Tuple[Optional[str], Optional[str], float]] = {}
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="memvision_context",
@@ -161,6 +193,22 @@ class ContextExtractor:
         if is_browser:
             url = self._extract_browser_url(hwnd, app_name, title)
 
+        app_name_lower = app_name.lower()
+        is_ide = (
+            app_name_lower in IDE_PROCESSES
+            or any(k in app_name_lower for k in ("code", "cursor", "studio", "pycharm", "idea", "sublime", "notepad"))
+        )
+
+        file_path: Optional[str] = None
+        workspace_path: Optional[str] = None
+        has_file_extension = bool(title and any(ext in title.lower() for ext in (
+            ".py", ".md", ".json", ".js", ".ts", ".html", ".css", ".txt", ".rs",
+            ".go", ".c", ".cpp", ".h", ".yaml", ".yml", ".toml", ".sql"
+        )))
+
+        if is_ide or has_file_extension:
+            file_path, workspace_path = self.resolve_file_path(hwnd, pid.value, app_name, title)
+
         return WindowContext(
             hwnd=hwnd,
             process_id=pid.value,
@@ -169,6 +217,9 @@ class ContextExtractor:
             url=url,
             bounding_box=bbox,
             is_browser=is_browser,
+            file_path=file_path,
+            workspace_path=workspace_path,
+            is_ide=is_ide,
         )
 
     def get_active_context(self) -> WindowContext:
@@ -355,6 +406,253 @@ class ContextExtractor:
 
         return None
 
+    def resolve_file_path(
+        self, hwnd: int, pid: int, app_name: str, title: str
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Extracts and resolves the exact absolute file path and workspace path
+        for files open in IDEs and text editors.
+        Disambiguates duplicate filenames (e.g. README.md or config.json)
+        by inspecting UI Automation, IDE workspace storage, or resolving within
+        the active project folder.
+
+        Returns:
+            (resolved_file_path, workspace_path)
+        """
+        if not title:
+            return None, None
+
+        now = time.time()
+        cache_key = (pid, title)
+        cached = self._file_path_cache.get(cache_key)
+        if cached and (now - cached[2]) < 2.0:
+            return cached[0], cached[1]
+
+        resolved_file: Optional[str] = None
+        resolved_ws: Optional[str] = None
+
+        try:
+            resolved_file, resolved_ws = self._do_resolve_file_path(hwnd, pid, app_name, title)
+        except Exception as e:
+            logger.debug("Path resolution error for [%s] '%s': %s", app_name, title, e)
+
+        self._file_path_cache[cache_key] = (resolved_file, resolved_ws, now)
+        return resolved_file, resolved_ws
+
+    def _do_resolve_file_path(
+        self, hwnd: int, pid: int, app_name: str, title: str
+    ) -> Tuple[Optional[str], Optional[str]]:
+        clean_title = title.strip()
+
+        # Tier 1: Check for explicit absolute path in title (e.g. Notepad, Notepad++, custom IDE window.title)
+        m_win = re.search(r"([a-zA-Z]:[\\/][^\*\?\<\>\|\:\"]+?\.[a-zA-Z0-9_\-]+)", clean_title)
+        if m_win:
+            candidate = Path(m_win.group(1).strip())
+            if candidate.is_file():
+                return str(candidate.resolve()), str(candidate.parent.resolve())
+
+        # Tier 2: Extract candidate filename and workspace name from window title
+        candidate_filename: Optional[str] = None
+        workspace_hint: Optional[str] = None
+
+        # Pattern A: Antigravity IDE / VS Code variant: "memvison - Antigravity IDE - README.md"
+        m_anti = re.search(
+            r"^(?P<workspace>[^-\u2013\u2014]+?)\s*[-\u2013\u2014]\s*(?:Antigravity IDE|Visual Studio Code|Cursor|Windsurf|Code|VSCodium)\s*[-\u2013\u2014]\s*(?P<filename>[^-\u2013\u2014]+)$",
+            clean_title,
+            re.IGNORECASE,
+        )
+        if m_anti:
+            workspace_hint = m_anti.group("workspace").strip()
+            candidate_filename = m_anti.group("filename").strip().lstrip("●* ")
+
+        # Pattern B: Standard VS Code / Cursor: "● README.md - memvison - Visual Studio Code"
+        if not candidate_filename:
+            m_vsc = re.search(
+                r"^●?\s*\*?\s*(?P<filename>[^-\u2013\u2014]+?)\s*[-\u2013\u2014]\s*(?P<workspace>[^-\u2013\u2014]+?)\s*[-\u2013\u2014]\s*(?:Visual Studio Code|Cursor|Antigravity IDE|Windsurf|Code|VSCodium)",
+                clean_title,
+                re.IGNORECASE,
+            )
+            if m_vsc:
+                candidate_filename = m_vsc.group("filename").strip().lstrip("●* ")
+                workspace_hint = m_vsc.group("workspace").strip()
+
+        # Pattern C: VS Code WSL / remote: "README.md - memvison [WSL: Ubuntu] - Visual Studio Code"
+        if not candidate_filename:
+            m_wsl = re.search(
+                r"^●?\s*\*?\s*(?P<filename>[^-\u2013\u2014]+?)\s*[-\u2013\u2014]\s*(?P<workspace>[^-\u2013\u2014\[]+?)\s*\[.*?\]\s*[-\u2013\u2014]",
+                clean_title,
+            )
+            if m_wsl:
+                candidate_filename = m_wsl.group("filename").strip().lstrip("●* ")
+                workspace_hint = m_wsl.group("workspace").strip()
+
+        # Pattern D: Sublime Text: "README.md (memvison) - Sublime Text"
+        if not candidate_filename:
+            m_sub = re.search(
+                r"^(?P<filename>[^-\u2013\u2014\(\)]+?)\s*\((?P<workspace>[^\)]+)\)\s*-\s*Sublime Text",
+                clean_title,
+                re.IGNORECASE,
+            )
+            if m_sub:
+                candidate_filename = m_sub.group("filename").strip().lstrip("●* ")
+                workspace_hint = m_sub.group("workspace").strip()
+
+        # Pattern E: JetBrains (PyCharm / IntelliJ): "[memvison] - README.md" or "memvison – README.md"
+        if not candidate_filename:
+            m_jb = re.search(
+                r"^\[(?P<workspace>[^\]]+)\]\s*[-\u2013\u2014]\s*(?P<filename>.+)",
+                clean_title,
+            )
+            if m_jb:
+                workspace_hint = m_jb.group("workspace").strip()
+                candidate_filename = m_jb.group("filename").strip().lstrip("●* ")
+
+        # Pattern F: Notepad / simple editor: "*README.md - Notepad"
+        if not candidate_filename:
+            m_np = re.search(r"^\*?(?P<filename>[^-\u2013\u2014]+?)\s*-\s*Notepad", clean_title, re.IGNORECASE)
+            if m_np:
+                candidate_filename = m_np.group("filename").strip().lstrip("●* ")
+
+        # Pattern G: Fallback split by dash delimiters
+        if not candidate_filename:
+            parts = [p.strip() for p in re.split(r"[-–—]", clean_title) if p.strip()]
+            for p in parts:
+                clean_p = p.lstrip("●* ")
+                if "." in clean_p and not any(clean_p.lower().endswith(x) for x in (".exe", ".com", ".app")):
+                    candidate_filename = clean_p
+                    break
+            for p in parts:
+                p_clean = p.strip()
+                if p_clean != candidate_filename and not any(app in p_clean.lower() for app in ("visual studio", "code", "cursor", "antigravity", "windsurf", "notepad", "sublime")):
+                    workspace_hint = p_clean
+                    break
+
+        # Tier 3: UI Automation Inspection (e.g. active tab tooltip or breadcrumb bar)
+        if hwnd:
+            try:
+                import comtypes
+                comtypes.CoInitialize()
+                import uiautomation as auto
+
+                ctrl = auto.ControlFromHandle(hwnd)
+                if ctrl:
+                    tabs = ctrl.GetChildren()
+                    for child in tabs[:15]:
+                        help_text = getattr(child, "HelpText", "") or ""
+                        if help_text:
+                            p_cand = Path(help_text.strip())
+                            if p_cand.is_file():
+                                return str(p_cand.resolve()), str(p_cand.parent.resolve())
+            except Exception:
+                pass
+
+        # Tier 4: IDE Process Workspace Storage (VS Code / Cursor / Windsurf / Antigravity IDE)
+        vsc_workspace_dir: Optional[Path] = None
+        if pid:
+            try:
+                proc = psutil.Process(pid)
+                for ofile in proc.open_files():
+                    if "workspaceStorage" in ofile.path and ofile.path.endswith("state.vscdb"):
+                        vscdb_path = Path(ofile.path)
+                        ws_json_path = vscdb_path.parent / "workspace.json"
+                        if ws_json_path.is_file():
+                            try:
+                                ws_info = json.loads(ws_json_path.read_text(encoding="utf-8"))
+                                folder_uri = ws_info.get("folder", "")
+                                if folder_uri:
+                                    parsed_uri = urllib.parse.urlparse(folder_uri)
+                                    raw_path = urllib.parse.unquote(parsed_uri.path).lstrip("/")
+                                    if len(raw_path) >= 2 and raw_path[1] == ":":
+                                        p_ws = Path(raw_path)
+                                    else:
+                                        p_ws = Path("/" + raw_path)
+                                    if p_ws.is_dir():
+                                        vsc_workspace_dir = p_ws
+                            except Exception:
+                                pass
+
+                        if candidate_filename and vscdb_path.is_file():
+                            try:
+                                conn = sqlite3.connect(str(vscdb_path), timeout=0.2)
+                                row = conn.cursor().execute(
+                                    "SELECT value FROM ItemTable WHERE key = 'history.entries';"
+                                ).fetchone()
+                                conn.close()
+                                if row:
+                                    entries = json.loads(row[0])
+                                    for entry in entries:
+                                        res_uri = entry.get("editor", {}).get("resource", "")
+                                        if res_uri:
+                                            p_parsed = urllib.parse.urlparse(res_uri)
+                                            unquoted = urllib.parse.unquote(p_parsed.path).lstrip("/")
+                                            cand_path = Path(unquoted)
+                                            if cand_path.name.lower() == candidate_filename.lower() and cand_path.is_file():
+                                                ws_res = str(vsc_workspace_dir.resolve()) if vsc_workspace_dir else str(cand_path.parent.resolve())
+                                                return str(cand_path.resolve()), ws_res
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+
+        # Tier 5: Project Folder Resolution & Disambiguation
+        if not candidate_filename:
+            return None, None
+
+        target_ws_dir: Optional[Path] = vsc_workspace_dir
+        if not target_ws_dir and workspace_hint:
+            if _project_root.name.lower() == workspace_hint.lower():
+                target_ws_dir = _project_root
+            elif (_project_root.parent / workspace_hint).is_dir():
+                target_ws_dir = _project_root.parent / workspace_hint
+            elif (Path.cwd().parent / workspace_hint).is_dir():
+                target_ws_dir = Path.cwd().parent / workspace_hint
+            elif (Path.cwd() / workspace_hint).is_dir():
+                target_ws_dir = Path.cwd() / workspace_hint
+
+        if not target_ws_dir:
+            target_ws_dir = _project_root
+
+        # 1. Direct root file check
+        direct_file = target_ws_dir / candidate_filename
+        if direct_file.is_file():
+            return str(direct_file.resolve()), str(target_ws_dir.resolve())
+
+        # 2. Search workspace recursively, ignoring cache/vendor/virtualenv directories
+        ignored_dirs = {".git", ".venv", "venv", ".pytest_cache", "node_modules", "__pycache__", ".idea", ".vscode", "dist", "build"}
+        matching_files: list[Path] = []
+        try:
+            for root, dirs, files in os.walk(target_ws_dir):
+                dirs[:] = [d for d in dirs if d not in ignored_dirs]
+                for f in files:
+                    if f.lower() == candidate_filename.lower():
+                        matching_files.append(Path(root) / f)
+                        if len(matching_files) >= 10:
+                            break
+                if len(matching_files) >= 10:
+                    break
+        except Exception:
+            pass
+
+        if len(matching_files) == 1:
+            return str(matching_files[0].resolve()), str(target_ws_dir.resolve())
+        elif len(matching_files) > 1:
+            def _file_score(p: Path) -> float:
+                score = 0.0
+                p_str = str(p).lower()
+                if "test" not in p_str and "cache" not in p_str:
+                    score += 1000.0
+                try:
+                    score += p.stat().st_mtime
+                except Exception:
+                    pass
+                return score
+
+            best = max(matching_files, key=_file_score)
+            return str(best.resolve()), str(target_ws_dir.resolve())
+
+        return None, str(target_ws_dir.resolve()) if target_ws_dir else None
+
     def close(self) -> None:
         """Release context thread pool."""
         self._executor.shutdown(wait=False, cancel_futures=True)
+
