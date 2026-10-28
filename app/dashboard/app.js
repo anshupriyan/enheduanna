@@ -629,35 +629,39 @@
     let activeBubbleText = "";
     let currentToolGroupEl = null;
 
-    let thinkingStartTime = null;
+    let thinkingStartTime = Date.now();
     let thinkingInterval = null;
-    let currentThinkingDrawer = null;
     let accumulatedReasoning = "";
 
-    function getOrCreateThinkingDrawer() {
-      if (!currentThinkingDrawer) {
-        currentThinkingDrawer = document.createElement("details");
-        currentThinkingDrawer.className = "thinking-drawer";
-        currentThinkingDrawer.open = true;
-        currentThinkingDrawer.innerHTML = `
-          <summary class="thinking-drawer-summary">
-            <div class="thinking-left">
-              <span class="thinking-pulse-dot"></span>
-              <span class="thinking-label">Thinking (<span class="thinking-timer">0s</span>)</span>
-            </div>
-            <svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-          </summary>
-          <div class="thinking-drawer-body"></div>
-        `;
-        turnContent.appendChild(currentThinkingDrawer);
-        thinkingStartTime = Date.now();
-        thinkingInterval = setInterval(() => {
-          const elapsed = Math.round((Date.now() - thinkingStartTime) / 1000);
-          const timerEl = currentThinkingDrawer?.querySelector(".thinking-timer");
-          if (timerEl) timerEl.textContent = `${elapsed}s`;
-        }, 1000);
+    // Always create the Thinking Drawer so the user sees real-time reasoning and planning
+    const currentThinkingDrawer = document.createElement("details");
+    currentThinkingDrawer.className = "thinking-drawer";
+    currentThinkingDrawer.open = true;
+    currentThinkingDrawer.innerHTML = `
+      <summary class="thinking-drawer-summary">
+        <div class="thinking-left">
+          <span class="thinking-pulse-dot"></span>
+          <span class="thinking-label">Thinking (<span class="thinking-timer">0s</span>)</span>
+        </div>
+        <svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </summary>
+      <div class="thinking-drawer-body">Analyzing request, evaluating memory parameters, and planning tool execution...</div>
+    `;
+    turnContent.appendChild(currentThinkingDrawer);
+
+    thinkingInterval = setInterval(() => {
+      const elapsed = Math.round((Date.now() - thinkingStartTime) / 1000);
+      const timerEl = currentThinkingDrawer?.querySelector(".thinking-timer");
+      if (timerEl) timerEl.textContent = `${elapsed}s`;
+    }, 1000);
+
+    function appendThinkingNote(text) {
+      if (!currentThinkingDrawer) return;
+      const body = currentThinkingDrawer.querySelector(".thinking-drawer-body");
+      if (body) {
+        body.textContent += `\n• ${text}`;
+        body.scrollTop = body.scrollHeight;
       }
-      return currentThinkingDrawer;
     }
 
     function finalizeThinking() {
@@ -666,12 +670,12 @@
         thinkingInterval = null;
       }
       if (currentThinkingDrawer) {
-        const elapsed = Math.max(1, Math.round((Date.now() - (thinkingStartTime || Date.now())) / 1000));
+        const elapsed = Math.max(1, Math.round((Date.now() - thinkingStartTime) / 1000));
         const label = currentThinkingDrawer.querySelector(".thinking-label");
         const dot = currentThinkingDrawer.querySelector(".thinking-pulse-dot");
         if (dot) dot.style.display = "none";
         if (label) label.textContent = `Thinking for ${elapsed}s`;
-        currentThinkingDrawer.open = false;
+        currentThinkingDrawer.open = false; // Auto-collapse when answer begins streaming
       }
     }
 
@@ -750,21 +754,23 @@
             const data = JSON.parse(dataStr);
 
             if (eventType === "reasoning") {
-              const drawer = getOrCreateThinkingDrawer();
-              const body = drawer.querySelector(".thinking-drawer-body");
-              accumulatedReasoning += data.text;
-              body.textContent = accumulatedReasoning;
-              const elapsed = Math.round((Date.now() - (thinkingStartTime || Date.now())) / 1000);
+              const body = currentThinkingDrawer.querySelector(".thinking-drawer-body");
+              if (body) {
+                if (!accumulatedReasoning) body.textContent = "";
+                accumulatedReasoning += data.text;
+                body.textContent = accumulatedReasoning;
+              }
+              const elapsed = Math.round((Date.now() - thinkingStartTime) / 1000);
               progressIndicator.setText(`Thinking & Reasoning (${elapsed}s)...`);
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "step_narration") {
-              if (currentThinkingDrawer) {
-                const body = currentThinkingDrawer.querySelector(".thinking-drawer-body");
-                if (body && data.text) {
-                  body.textContent += `\n[Agent Plan]: ${data.text}\n`;
-                }
-              }
+              appendThinkingNote(`Plan: ${data.text}`);
             } else if (eventType === "step_start") {
+              appendThinkingNote(
+                data.isSynthesis
+                  ? `Step ${data.step}: Synthesizing final answer from evidence (${data.model || "synthesis"})...`
+                  : `Step ${data.step}: Formulating plan with ${data.model || "agent"}...`
+              );
               let stepBadge = turnContent.querySelector(".step-indicator-badge");
               if (!stepBadge) {
                 stepBadge = document.createElement("div");
@@ -781,7 +787,8 @@
                   : `Step ${data.step} of ${data.maxSteps}: Running reasoning...`
               );
             } else if (eventType === "tool_group_start") {
-              finalizeThinking();
+              const toolNames = (data.toolCalls || []).map((t) => t.name).join(", ");
+              appendThinkingNote(`Executing ${data.count || 1} parallel tool(s): ${toolNames || "tool"}`);
               // End text bubble; create group card for parallel tools
               activeTextBubble = null;
               activeBubbleText = "";
@@ -859,6 +866,7 @@
               progressIndicator.setText(`Authorization resolved (${data.decision}). Continuing execution...`);
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "tool_group_done") {
+              appendThinkingNote(`Tools completed in ${data.wallClockMs}ms. Cross-referencing findings...`);
               const headerEl = document.getElementById(`tool-group-header-step-${data.step}`);
               if (headerEl) {
                 const count = data.callCount || 1;
