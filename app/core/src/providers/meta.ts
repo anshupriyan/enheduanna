@@ -3,7 +3,12 @@ import { type AppConfig } from "../config.js";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content:
+    | string
+    | Array<
+        | { type: "text"; text: string }
+        | { type: "image_url"; image_url: { url: string; detail?: string } }
+      >;
   name?: string;
   tool_call_id?: string;
   tool_calls?: Array<{

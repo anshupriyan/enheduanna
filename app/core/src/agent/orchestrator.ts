@@ -341,6 +341,8 @@ export class Orchestrator {
               isError: result.isError,
               durationMs,
               isRepeated: false,
+              hasImage: Boolean(result.image),
+              imageUrl: result.image ? `data:${result.image.mimeType};base64,${result.image.data}` : undefined,
             })}\n\n`
           );
         }
@@ -352,6 +354,7 @@ export class Orchestrator {
           isError: result.isError,
           durationMs,
           isRepeated: false,
+          image: result.image,
         };
       } catch (toolErr) {
         const durationMs = Date.now() - callStart;
@@ -393,6 +396,7 @@ export class Orchestrator {
       isError?: boolean;
       durationMs: number;
       isRepeated?: boolean;
+      image?: { data: string; mimeType: string };
     }> = [];
 
     for (let i = 0; i < settled.length; i++) {
@@ -429,6 +433,26 @@ export class Orchestrator {
         name: tr.name,
         content: tr.content,
       });
+
+      // If the tool returned visual image data (screenshot crop / full screenshot),
+      // inject multimodal content so Muse Spark / multimodal vision encoder inspects the screen directly
+      if (tr.image) {
+        sessionStore.appendMessage(sessionId, {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `[Visual Screenshot from ${tr.name} (${tr.tool_call_id})]:`,
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${tr.image.mimeType};base64,${tr.image.data}`,
+              },
+            },
+          ],
+        });
+      }
     }
 
     // Emit tool_group_done

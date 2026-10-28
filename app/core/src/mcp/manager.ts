@@ -19,6 +19,16 @@ export interface UnifiedTool {
   sourceServer: "memvision" | "cli-bridge" | "internal";
 }
 
+export interface ToolExecutionResult {
+  content: string;
+  isError: boolean;
+  bufferId?: string;
+  image?: {
+    data: string;
+    mimeType: string;
+  };
+}
+
 export class McpManager {
   private memClient: Client | null = null;
   private memTransport: StdioClientTransport | null = null;
@@ -215,7 +225,7 @@ export class McpManager {
     }));
   }
 
-  public async executeTool(name: string, args: Record<string, unknown>): Promise<{ content: string; isError: boolean; bufferId?: string }> {
+  public async executeTool(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult> {
     const startTime = Date.now();
     const toolDef = this.tools.get(name);
 
@@ -240,6 +250,7 @@ export class McpManager {
 
     try {
       let rawResult: unknown;
+      let extractedImage: { data: string; mimeType: string } | undefined = undefined;
 
       if (name === "get_full_result") {
         const resultId = String(args.result_id || "");
@@ -248,7 +259,27 @@ export class McpManager {
       } else if (toolDef.sourceServer === "memvision") {
         if (!this.memClient) throw new Error("memvision MCP client is not connected");
         const res = await this.memClient.callTool({ name, arguments: args });
-        rawResult = this.unwrapMcpResult(res.content);
+
+        // Detect visual multimodal image content
+        if (Array.isArray(res.content)) {
+          const imgItem = (res.content as any[]).find((item: any) => item?.type === "image" && item?.data);
+          if (imgItem) {
+            extractedImage = {
+              data: String(imgItem.data),
+              mimeType: String(imgItem.mimeType || "image/jpeg"),
+            };
+            const nonImg = (res.content as any[]).filter((item: any) => item?.type !== "image");
+            if (nonImg.length > 0) {
+              rawResult = this.unwrapMcpResult(nonImg);
+            } else {
+              rawResult = `[Visual screenshot image successfully retrieved: format ${extractedImage.mimeType}, size ${Math.round((extractedImage.data.length * 0.75) / 1024)} KB. Visual content delivered to model.]`;
+            }
+          } else {
+            rawResult = this.unwrapMcpResult(res.content);
+          }
+        } else {
+          rawResult = this.unwrapMcpResult(res.content);
+        }
       } else if (toolDef.sourceServer === "cli-bridge") {
         if (!this.cliClient) throw new Error("cli-bridge MCP client is not connected");
         const res = await this.cliClient.callTool({ name, arguments: args });
@@ -268,6 +299,7 @@ export class McpManager {
           outputLength: processed.text.length,
           isTruncated: processed.isTruncated,
           bufferId: processed.bufferId,
+          hasImage: Boolean(extractedImage),
           preview: processed.text.substring(0, 300),
         },
         latencyMs: durationMs,
@@ -277,6 +309,7 @@ export class McpManager {
         content: processed.text,
         isError: false,
         bufferId: processed.bufferId,
+        image: extractedImage,
       };
     } catch (err: unknown) {
       const durationMs = Date.now() - startTime;

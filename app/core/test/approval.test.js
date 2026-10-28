@@ -100,3 +100,4 @@ test("Approval: resolveRequest with denial", async () => {
   const deniedResult = await promise;
   assert.strictEqual(deniedResult, false, "Promise must resolve with false on denial");
 });
+

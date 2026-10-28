@@ -65,7 +65,13 @@ export class SessionStore {
 
     // Auto-update title from first user message
     if (session.messages.length === 2 && message.role === "user") {
-      const cleanTitle = message.content.slice(0, 40).replace(/\n/g, " ");
+      const rawText =
+        typeof message.content === "string"
+          ? message.content
+          : Array.isArray(message.content)
+            ? (message.content.find((p) => p.type === "text") as { text: string })?.text || ""
+            : "";
+      const cleanTitle = rawText.slice(0, 40).replace(/\n/g, " ");
       session.title = cleanTitle.length > 0 ? cleanTitle : "New Conversation";
     }
 

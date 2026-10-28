@@ -413,6 +413,22 @@
       resultTitleEl.style.display = "block";
       resultBoxEl.style.display = "block";
       resultBoxEl.textContent = formatToolResult(resultText);
+
+      if (meta.hasImage && meta.imageUrl) {
+        let existingImg = document.getElementById(`tool-img-${callId}`);
+        if (!existingImg) {
+          const imgWrap = document.createElement("div");
+          imgWrap.className = "tool-image-container";
+          imgWrap.id = `tool-img-${callId}`;
+          imgWrap.innerHTML = `
+            <div class="tool-section-title">Visual Capture Inspection</div>
+            <a href="${meta.imageUrl}" target="_blank" rel="noopener noreferrer" title="Click to view full image in new tab">
+              <img src="${meta.imageUrl}" class="tool-result-image" alt="Screenshot capture" />
+            </a>
+          `;
+          resultBoxEl.parentNode.insertBefore(imgWrap, resultBoxEl);
+        }
+      }
     }
   }
 
@@ -666,6 +682,8 @@
                 isError: data.isError,
                 isRepeated: data.isRepeated,
                 durationMs: data.durationMs,
+                hasImage: data.hasImage,
+                imageUrl: data.imageUrl,
               });
               progressIndicator.setText(`Finished ${data.name}, processing...`);
             } else if (eventType === "approval_required") {
