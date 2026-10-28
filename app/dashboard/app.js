@@ -432,6 +432,38 @@
     }
   }
 
+  function collapseEvidence(turnContent) {
+    const toolGroups = turnContent.querySelectorAll(".tool-group-card, .step-indicator-badge, .step-cap-warning");
+    if (toolGroups.length === 0) return;
+
+    let existingDrawer = turnContent.querySelector(".evidence-drawer");
+    if (existingDrawer) return;
+
+    const drawer = document.createElement("details");
+    drawer.className = "evidence-drawer";
+
+    const totalToolChips = turnContent.querySelectorAll(".tool-chip").length;
+    drawer.innerHTML = `
+      <summary class="evidence-drawer-summary" title="Click to expand tool execution details and raw evidence">
+        <svg class="evidence-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        <span>Evidence (${totalToolChips} tool call${totalToolChips === 1 ? "" : "s"})</span>
+      </summary>
+      <div class="evidence-drawer-body"></div>
+    `;
+
+    const drawerBody = drawer.querySelector(".evidence-drawer-body");
+    toolGroups.forEach((el) => {
+      drawerBody.appendChild(el);
+    });
+
+    const textBubble = turnContent.querySelector(".message-bubble");
+    if (textBubble) {
+      turnContent.insertBefore(drawer, textBubble);
+    } else {
+      turnContent.appendChild(drawer);
+    }
+  }
+
   function createApprovalCard(data) {
     const card = document.createElement("div");
     card.className = "approval-card";
@@ -740,10 +772,11 @@
               progressIndicator.setText(`Synthesizing final answer from available evidence...`);
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "delta") {
-              // Final answer started streaming: remove the progress indicator
+              // Final answer started streaming: remove the progress indicator and collapse intermediate tool clutter
               progressIndicator.remove();
 
               if (!activeTextBubble) {
+                collapseEvidence(turnContent);
                 activeTextBubble = document.createElement("div");
                 activeTextBubble.className = "message-bubble";
                 turnContent.appendChild(activeTextBubble);
@@ -761,6 +794,7 @@
               turnContent.appendChild(errEl);
             } else if (eventType === "done") {
               progressIndicator.remove();
+              collapseEvidence(turnContent);
               await loadSessions();
             }
           } catch {}

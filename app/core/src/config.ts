@@ -26,6 +26,9 @@ export interface AppConfig {
   model: {
     provider: "meta" | "omniroute" | "openai";
     modelName: string;
+    toolModel?: string;
+    synthesisModel?: string;
+    enableTwoModelRouting?: boolean;
     baseUrl: string;
     reasoningEffort: "minimal" | "low" | "medium" | "high" | "max";
   };
@@ -48,6 +51,9 @@ const DEFAULT_CONFIG: AppConfig = {
   model: {
     provider: "meta",
     modelName: "muse-spark-1.3",
+    toolModel: "muse-spark-1.3",
+    synthesisModel: "muse-wonder-1.0",
+    enableTwoModelRouting: true,
     baseUrl: "https://api.meta.ai/v1",
     reasoningEffort: "medium",
   },
@@ -131,6 +137,15 @@ export function loadConfig(): AppConfig {
   }
   if (process.env.MODEL_NAME) {
     cfg.model.modelName = process.env.MODEL_NAME;
+  }
+  if (process.env.TOOL_MODEL_NAME) {
+    cfg.model.toolModel = process.env.TOOL_MODEL_NAME;
+  }
+  if (process.env.SYNTHESIS_MODEL_NAME) {
+    cfg.model.synthesisModel = process.env.SYNTHESIS_MODEL_NAME;
+  }
+  if (process.env.ENABLE_TWO_MODEL_ROUTING !== undefined) {
+    cfg.model.enableTwoModelRouting = process.env.ENABLE_TWO_MODEL_ROUTING === "true" || process.env.ENABLE_TWO_MODEL_ROUTING === "1";
   }
   if (process.env.OMNIROUTE_BASE_URL) {
     cfg.model.baseUrl = process.env.OMNIROUTE_BASE_URL;

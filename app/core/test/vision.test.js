@@ -31,3 +31,4 @@ test("Vision: ChatMessage supports multimodal content array with image_url", () 
   assert.strictEqual(msg.content[1].type, "image_url");
   assert.ok(msg.content[1].image_url.url.startsWith("data:image/jpeg;base64,"));
 });
+

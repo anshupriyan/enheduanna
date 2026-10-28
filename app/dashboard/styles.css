@@ -499,6 +499,60 @@ body {
   width: fit-content;
 }
 
+/* Collapsible Evidence Drawer for Clean Answers */
+.evidence-drawer {
+  margin: 6px 0 10px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: rgba(13, 18, 27, 0.7);
+  overflow: hidden;
+  width: 100%;
+  max-width: 680px;
+  transition: all 0.2s ease;
+}
+
+.evidence-drawer-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  background-color: var(--bg-surface);
+  transition: background-color 0.15s ease, color 0.15s ease;
+  list-style: none;
+}
+
+.evidence-drawer-summary::-webkit-details-marker {
+  display: none;
+}
+
+.evidence-drawer-summary:hover {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-secondary);
+}
+
+.evidence-chevron {
+  transition: transform 0.2s ease;
+  color: var(--text-muted);
+}
+
+.evidence-drawer[open] .evidence-chevron {
+  transform: rotate(90deg);
+}
+
+.evidence-drawer-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: #070a10;
+  border-top: 1px solid var(--border-subtle);
+}
+
 .step-cap-warning {
   display: inline-flex;
   align-items: center;

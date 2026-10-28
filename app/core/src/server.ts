@@ -142,6 +142,7 @@ export class CoreServer {
             baseUrl?: string;
             modelName?: string;
             provider?: string;
+            enableTwoModelRouting?: boolean;
           };
         }>(req);
 

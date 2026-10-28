@@ -6,6 +6,8 @@ import { traceBus } from "../trace/bus.js";
 import { getApiKey, type AppConfig } from "../config.js";
 import { getSystemPrompt } from "../prompts/loader.js";
 import { approvalManager } from "./approval.js";
+import { EvidencePacker, type PackedTimelineEvidence } from "./evidence.js";
+import type { ChatMessage } from "../providers/meta.js";
 
 export interface TurnOptions {
   maxSteps?: number;
@@ -14,6 +16,7 @@ export interface TurnOptions {
   baseUrl?: string;
   modelName?: string;
   provider?: string;
+  enableTwoModelRouting?: boolean;
 }
 
 export interface StepExecutionResult {
@@ -76,44 +79,100 @@ export class Orchestrator {
     const tools = isSynthesis ? [] : this.mcpManager.getChatCompletionsTools();
     const apiKey = options.apiKey || getApiKey(options.provider || this.config.model.provider);
 
+    const toolModel = options.modelName || this.config.model.toolModel || this.config.model.modelName || "muse-spark-1.3";
+    const synthesisModel = this.config.model.synthesisModel || "muse-wonder-1.0";
+    const activeModel = isSynthesis ? synthesisModel : toolModel;
+
     if (res) {
       res.write(
         `event: step_start\ndata: ${JSON.stringify({
           step,
           maxSteps,
           isSynthesis,
+          model: activeModel,
+          stage: isSynthesis ? "synthesis" : "tool_agent",
         })}\n\n`
       );
     }
 
+    traceBus.emitTrace({
+      type: "model_request",
+      source: "orchestrator",
+      title: `Step ${step}: Model Request (${activeModel})`,
+      data: {
+        step,
+        stage: isSynthesis ? "synthesis" : "tool_agent",
+        model: activeModel,
+        messageCount: session.messages.length,
+        toolCount: tools.length,
+      },
+    });
+
     let stepReply = "";
     let stepReasoning = "";
 
-    const turnOutput = await this.provider.callStreaming(
-      session.messages,
-      tools,
-      apiKey,
-      {
-        onReasoningDelta: (chunk) => {
-          stepReasoning += chunk;
-          if (res) {
-            res.write(`event: reasoning\ndata: ${JSON.stringify({ text: chunk, step })}\n\n`);
-          }
-        },
-        onDelta: (chunk) => {
-          stepReply += chunk;
-          // When performing final synthesis (tools disabled), stream directly to user bubble
-          if (isSynthesis && res) {
-            res.write(`event: delta\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
-          }
-        },
-        onToolCall: () => {
-          // Handled after streaming completes
-        },
+    const streamCallbacks = {
+      onReasoningDelta: (chunk: string) => {
+        stepReasoning += chunk;
+        if (res) {
+          res.write(`event: reasoning\ndata: ${JSON.stringify({ text: chunk, step })}\n\n`);
+        }
       },
-      options.baseUrl,
-      options.modelName
-    );
+      onDelta: (chunk: string) => {
+        stepReply += chunk;
+        // When performing final synthesis (tools disabled), stream directly to user bubble
+        if (isSynthesis && res) {
+          res.write(`event: delta\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
+        }
+      },
+      onToolCall: () => {
+        // Handled after streaming completes
+      },
+    };
+
+    let turnOutput;
+    try {
+      turnOutput = await this.provider.callStreaming(
+        session.messages,
+        tools,
+        apiKey,
+        streamCallbacks,
+        options.baseUrl,
+        activeModel
+      );
+    } catch (modelErr) {
+      // If synthesis model (e.g. Wonder) fails, automatically fall back to tool model (Spark)
+      if (isSynthesis && activeModel !== toolModel) {
+        traceBus.emitTrace({
+          type: "warning",
+          source: "orchestrator",
+          title: `Synthesis Model Fallback: ${activeModel} -> ${toolModel}`,
+          data: {
+            failedModel: activeModel,
+            fallbackModel: toolModel,
+            error: (modelErr as Error).message,
+          },
+        });
+        if (res) {
+          res.write(
+            `event: synthesis_fallback\ndata: ${JSON.stringify({
+              failedModel: activeModel,
+              fallbackModel: toolModel,
+            })}\n\n`
+          );
+        }
+        turnOutput = await this.provider.callStreaming(
+          session.messages,
+          tools,
+          apiKey,
+          streamCallbacks,
+          options.baseUrl,
+          toolModel
+        );
+      } else {
+        throw modelErr;
+      }
+    }
 
     // 1. Terminal Response: Model provided a direct answer without tool calls
     if (!turnOutput.toolCalls || turnOutput.toolCalls.length === 0) {
@@ -455,6 +514,17 @@ export class Orchestrator {
       }
     }
 
+    // Pack evidence from tool results and inject into session as verified timeline
+    try {
+      const packed = EvidencePacker.packEvidence(toolResults);
+      if (packed.segments.length > 0) {
+        sessionStore.appendMessage(sessionId, {
+          role: "system",
+          content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions: Lead directly with the synthesized answer in 1-3 natural sentences. Synthesize activities by purpose and duration. Do NOT echo raw IDs, raw OCR, or timestamps unless asked.`,
+        });
+      }
+    } catch {}
+
     // Emit tool_group_done
     if (res) {
       res.write(
@@ -537,9 +607,10 @@ export class Orchestrator {
       content: userPrompt,
     });
 
-    const maxSteps = options.maxSteps ?? this.config.limits.maxSteps ?? 6;
+    const maxSteps = options.maxSteps ?? this.config.limits.maxSteps ?? 8;
     const seenToolCalls = new Map<string, string>();
     const repeatCounter = { count: 0 };
+    const allTurnToolResults: Array<{ name: string; content: string }> = [];
     let step = 0;
     let finalAnswer = "";
 
@@ -563,6 +634,10 @@ export class Orchestrator {
           { seenToolCalls, repeatCounter }
         );
 
+        if (stepResult.toolResults && stepResult.toolResults.length > 0) {
+          allTurnToolResults.push(...stepResult.toolResults);
+        }
+
         if (stepResult.isTerminal) {
           finalAnswer = stepResult.reply;
           break;
@@ -581,18 +656,22 @@ export class Orchestrator {
 
         // If step limit reached, break to synthesis
         if (step >= maxSteps) {
+          res.write(`event: step_cap_reached\ndata: ${JSON.stringify({ maxSteps, step })}\n\n`);
           break;
         }
       }
 
-      // If loop concluded without a direct terminal answer (hit step limit or loop guard), synthesize final summary
-      if (!finalAnswer) {
-        res.write(`event: step_cap_reached\ndata: ${JSON.stringify({ maxSteps, step })}\n\n`);
+      const enableTwoModel = Boolean(
+        options.enableTwoModelRouting ?? this.config.model.enableTwoModelRouting
+      );
+
+      // Two-model routing: if enabled and tools were executed, Muse Wonder writes the final answer from packed evidence
+      if (enableTwoModel && allTurnToolResults.length > 0) {
+        const packed = EvidencePacker.packEvidence(allTurnToolResults, userPrompt);
 
         sessionStore.appendMessage(sessionId, {
           role: "system",
-          content:
-            "[System instruction: Step limit reached. Please synthesize a final answer based on all information retrieved so far. State what was found and clearly state what remains unknown.]",
+          content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions: Lead with the synthesized answer in 1-3 natural sentences as someone who understood what the user was doing. Synthesize activities by purpose and duration. Do NOT echo raw IDs, raw OCR, or timestamps unless asked.`,
         });
 
         const synthesisResult = await this.executeStep(
@@ -605,6 +684,31 @@ export class Orchestrator {
         );
 
         finalAnswer = synthesisResult.reply;
+      } else if (!finalAnswer) {
+        // Step limit reached or loop guard triggered without a terminal answer: summarize
+        if (allTurnToolResults.length > 0) {
+          const packed = EvidencePacker.packEvidence(allTurnToolResults, userPrompt);
+          sessionStore.appendMessage(sessionId, {
+            role: "system",
+            content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions: Step limit reached. Please synthesize a final answer based on all information retrieved so far. State what was found and clearly state what remains unknown. Lead with 1-3 natural sentences. Do NOT echo raw IDs, raw OCR, or timestamps unless asked.`,
+          });
+        }
+
+        const synthesisResult = await this.executeStep(
+          sessionId,
+          step + 1,
+          maxSteps,
+          options,
+          res,
+          { isFinalSynthesis: true }
+        );
+
+        finalAnswer = synthesisResult.reply;
+      } else if (!finalAnswer) {
+        finalAnswer = "I've reviewed your request but couldn't retrieve any matching memory or actions.";
+        if (res) {
+          res.write(`event: delta\ndata: ${JSON.stringify({ text: finalAnswer })}\n\n`);
+        }
       }
 
       // Conclude SSE stream
