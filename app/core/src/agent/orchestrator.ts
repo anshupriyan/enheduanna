@@ -4,6 +4,7 @@ import { McpManager } from "../mcp/manager.js";
 import { ModelProvider, type ChatMessage } from "../providers/meta.js";
 import { traceBus } from "../trace/bus.js";
 import { getApiKey, type AppConfig } from "../config.js";
+import { getSystemPrompt } from "../prompts/loader.js";
 
 export interface TurnOptions {
   maxSteps?: number;
@@ -34,6 +35,14 @@ export class Orchestrator {
       res.write(`event: error\ndata: ${JSON.stringify({ error: `Session '${sessionId}' not found` })}\n\n`);
       res.end();
       return;
+    }
+
+    // Refresh dynamic system prompt with current UTC/local timestamps and timezone
+    const dynamicPrompt = getSystemPrompt();
+    if (session.messages.length > 0 && session.messages[0].role === "system") {
+      session.messages[0].content = dynamicPrompt;
+    } else {
+      session.messages.unshift({ role: "system", content: dynamicPrompt });
     }
 
     // Append user message

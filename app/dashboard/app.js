@@ -268,6 +268,43 @@
     } catch {}
   }
 
+  function formatToolResult(raw) {
+    if (raw === null || raw === undefined) return "No output";
+    let val = raw;
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+        try {
+          val = JSON.parse(trimmed);
+        } catch {}
+      }
+    }
+
+    // Handle MCP text content arrays e.g. [{ type: "text", text: "..." }]
+    if (Array.isArray(val) && val.length > 0 && val[0]?.type === "text" && typeof val[0].text === "string") {
+      try {
+        val = JSON.parse(val[0].text);
+      } catch {
+        val = val[0].text;
+      }
+    }
+
+    // Handle nested stringified JSON
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+        try {
+          val = JSON.parse(trimmed);
+        } catch {}
+      }
+    }
+
+    if (typeof val === "object" && val !== null) {
+      return JSON.stringify(val, null, 2);
+    }
+    return String(val);
+  }
+
   function renderSessionMessages(messages) {
     messagesStream.innerHTML = "";
     const visibleMessages = messages.filter((m) => m.role !== "system");
@@ -279,11 +316,28 @@
     }
 
     chatWelcome.style.display = "none";
+    let currentTurnContent = null;
+
     for (const msg of visibleMessages) {
       if (msg.role === "user") {
+        currentTurnContent = null;
         appendUserMessage(msg.content);
       } else if (msg.role === "assistant") {
-        appendAssistantMessage(msg.content, msg.tool_calls);
+        if (!currentTurnContent) {
+          currentTurnContent = createAssistantRow();
+        }
+        if (msg.content && msg.content.trim()) {
+          const bubble = document.createElement("div");
+          bubble.className = "message-bubble";
+          bubble.textContent = msg.content;
+          currentTurnContent.appendChild(bubble);
+        }
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          for (const tc of msg.tool_calls) {
+            const chip = createToolChip(tc.id, tc.function.name, tc.function.arguments);
+            currentTurnContent.appendChild(chip);
+          }
+        }
       } else if (msg.role === "tool") {
         appendInlineToolResult(msg.tool_call_id, msg.name, msg.content);
       }
@@ -304,25 +358,17 @@
     messagesStream.scrollTop = messagesStream.scrollHeight;
   }
 
-  function appendAssistantMessage(text, toolCalls) {
+  function createAssistantRow() {
     chatWelcome.style.display = "none";
     const row = document.createElement("div");
     row.className = "message-row assistant";
     row.innerHTML = `
       <div class="message-header">Enheduanna</div>
-      <div class="message-bubble">${escapeHtml(text || "")}</div>
+      <div class="turn-content"></div>
     `;
-
-    if (toolCalls && toolCalls.length > 0) {
-      for (const tc of toolCalls) {
-        const chip = createToolChip(tc.id, tc.function.name, tc.function.arguments);
-        row.appendChild(chip);
-      }
-    }
-
     messagesStream.appendChild(row);
     messagesStream.scrollTop = messagesStream.scrollHeight;
-    return row.querySelector(".message-bubble");
+    return row.querySelector(".turn-content");
   }
 
   function createToolChip(id, name, argsStr) {
@@ -378,15 +424,7 @@
     if (resultTitleEl && resultBoxEl) {
       resultTitleEl.style.display = "block";
       resultBoxEl.style.display = "block";
-
-      let prettyResult = resultText;
-      try {
-        if (typeof resultText === "string" && (resultText.trim().startsWith("{") || resultText.trim().startsWith("["))) {
-          prettyResult = JSON.stringify(JSON.parse(resultText), null, 2);
-        }
-      } catch {}
-
-      resultBoxEl.textContent = prettyResult;
+      resultBoxEl.textContent = formatToolResult(resultText);
     }
   }
 
@@ -403,9 +441,10 @@
     isGenerating = true;
     sendBtn.disabled = true;
 
-    // Create assistant message row
-    const bubble = appendAssistantMessage("");
-    let currentBubbleText = "";
+    // Create assistant message row and chronological turn content container
+    const turnContent = createAssistantRow();
+    let activeTextBubble = null;
+    let activeBubbleText = "";
 
     try {
       const response = await fetch("/chat", {
@@ -422,7 +461,10 @@
 
       if (!response.ok) {
         const err = await response.text();
-        bubble.textContent = `[Error: ${err}]`;
+        const errBubble = document.createElement("div");
+        errBubble.className = "message-bubble";
+        errBubble.textContent = `[Error: ${err}]`;
+        turnContent.appendChild(errBubble);
         isGenerating = false;
         sendBtn.disabled = false;
         return;
@@ -461,17 +503,30 @@
             const data = JSON.parse(dataStr);
 
             if (eventType === "delta") {
-              currentBubbleText += data.text;
-              bubble.textContent = currentBubbleText;
+              if (!activeTextBubble) {
+                activeTextBubble = document.createElement("div");
+                activeTextBubble.className = "message-bubble";
+                turnContent.appendChild(activeTextBubble);
+                activeBubbleText = "";
+              }
+              activeBubbleText += data.text;
+              activeTextBubble.textContent = activeBubbleText;
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "tool_call_start") {
+              // End current text segment; next text will appear chronologically below this tool
+              activeTextBubble = null;
+              activeBubbleText = "";
               const chip = createToolChip(data.id, data.name, data.args);
-              bubble.parentElement.appendChild(chip);
+              turnContent.appendChild(chip);
+              messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "tool_call_done") {
               appendInlineToolResult(data.id, data.name, data.resultPreview);
             } else if (eventType === "error") {
-              currentBubbleText += `\n[Error: ${data.error}]`;
-              bubble.textContent = currentBubbleText;
+              const errEl = document.createElement("div");
+              errEl.className = "message-bubble";
+              errEl.style.color = "var(--accent-red)";
+              errEl.textContent = `[Error: ${data.error}]`;
+              turnContent.appendChild(errEl);
             } else if (eventType === "done") {
               await loadSessions();
             }
@@ -479,7 +534,11 @@
         }
       }
     } catch (err) {
-      bubble.textContent = `[Request failed: ${err.message}]`;
+      const errBubble = document.createElement("div");
+      errBubble.className = "message-bubble";
+      errBubble.style.color = "var(--accent-red)";
+      errBubble.textContent = `[Request failed: ${err.message}]`;
+      turnContent.appendChild(errBubble);
     } finally {
       isGenerating = false;
       sendBtn.disabled = false;

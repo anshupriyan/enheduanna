@@ -37,6 +37,30 @@ export class McpManager {
     return clean;
   }
 
+  private unwrapMcpResult(content: unknown): unknown {
+    if (!content) return content;
+    if (Array.isArray(content)) {
+      if (content.length === 1 && content[0]?.type === "text" && typeof content[0].text === "string") {
+        try {
+          return JSON.parse(content[0].text);
+        } catch {
+          return content[0].text;
+        }
+      }
+      return content.map((item) => {
+        if (item?.type === "text" && typeof item.text === "string") {
+          try {
+            return JSON.parse(item.text);
+          } catch {
+            return item.text;
+          }
+        }
+        return item;
+      });
+    }
+    return content;
+  }
+
   public async init(): Promise<void> {
     const repoRoot = getRepoRoot();
     const pythonExe = resolvePythonExe();
@@ -210,11 +234,11 @@ export class McpManager {
       } else if (toolDef.sourceServer === "memvision") {
         if (!this.memClient) throw new Error("memvision MCP client is not connected");
         const res = await this.memClient.callTool({ name, arguments: args });
-        rawResult = res.content;
+        rawResult = this.unwrapMcpResult(res.content);
       } else if (toolDef.sourceServer === "cli-bridge") {
         if (!this.cliClient) throw new Error("cli-bridge MCP client is not connected");
         const res = await this.cliClient.callTool({ name, arguments: args });
-        rawResult = res.content;
+        rawResult = this.unwrapMcpResult(res.content);
       }
 
       const durationMs = Date.now() - startTime;

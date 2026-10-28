@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { ChatMessage } from "../providers/meta.js";
+import { getSystemPrompt } from "../prompts/loader.js";
 
 export interface Session {
   id: string;
@@ -27,8 +28,7 @@ export class SessionStore {
       messages: [
         {
           role: "system",
-          content:
-            "You are Enheduanna, an on-device AI assistant with direct access to desktop screen memory (memvision MCP) and local workspace filesystem/command execution (cli-bridge MCP). When the user asks about what was on their screen or recent activities, use memvision tools. When the user asks about files or commands, use cli-bridge tools. Always answer accurately and concisely.",
+          content: getSystemPrompt(),
         },
       ],
     };
