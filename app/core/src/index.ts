@@ -6,7 +6,6 @@ import { captureSupervisor } from "./capture/supervisor.js";
 
 async function main() {
   const config = loadConfig();
-  const token = initAuthToken();
 
   console.log("  𒀭 Enheduanna Integration Core Service");
   console.log(`  • Host: http://${config.server.host}:${config.server.port}`);
@@ -20,7 +19,7 @@ async function main() {
   await server.listen();
 
   console.log(`  🚀 Enheduanna Server is LIVE at http://${config.server.host}:${config.server.port}`);
-  console.log(`  • Dashboard: http://${config.server.host}:${config.server.port}/?token=${token}`);
+  console.log(`  • Dashboard: http://${config.server.host}:${config.server.port}/`);
   console.log("------------------------------------------------------------------");
 
   const shutdown = async () => {

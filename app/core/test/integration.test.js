@@ -3,16 +3,13 @@ import assert from "node:assert";
 import { toolResultBuffer } from "../dist/mcp/buffer.js";
 import { redactSecrets } from "../dist/trace/bus.js";
 
-const TOKEN = "b1f82975bcebd22307d4e774e56cbc2f54dc096543b37a2e936433c61d858ab0";
 const BASE_URL = "http://127.0.0.1:4100";
 
-test("Acceptance Test 1: /chat without auth token returns 401", async () => {
-  const res = await fetch(`${BASE_URL}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: "Hello without token" }),
-  });
-  assert.strictEqual(res.status, 401, "Expected 401 Unauthorized without Bearer token");
+test("Acceptance Test 1: Open localhost access - /health returns 200 without token", async () => {
+  const res = await fetch(`${BASE_URL}/health`);
+  assert.strictEqual(res.status, 200, "Expected 200 OK without token");
+  const data = await res.json();
+  assert.strictEqual(data.status, "healthy");
 });
 
 test("Acceptance Test 2: API key appears nowhere in browser-served files or /health", async () => {
@@ -22,9 +19,7 @@ test("Acceptance Test 2: API key appears nowhere in browser-served files or /hea
   assert.strictEqual(html.includes("sk-"), false, "No secret tokens in HTML");
 
   // Test /health endpoint
-  const rHealth = await fetch(`${BASE_URL}/health`, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-  });
+  const rHealth = await fetch(`${BASE_URL}/health`);
   const health = await rHealth.json();
   const rawHealth = JSON.stringify(health);
   assert.strictEqual(rawHealth.includes("sk-"), false, "No API keys leaked in /health");
@@ -52,9 +47,7 @@ test("Acceptance Test 4: Tool result truncation and buffer retrieval", () => {
 });
 
 test("Acceptance Test 5: /tools returns all registered MCP tools from both servers", async () => {
-  const res = await fetch(`${BASE_URL}/tools`, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-  });
+  const res = await fetch(`${BASE_URL}/tools`);
   const data = await res.json();
   assert.ok(Array.isArray(data.tools), "Tools must be an array");
   assert.ok(data.tools.length >= 18, `Expected at least 18 tools, got ${data.tools.length}`);

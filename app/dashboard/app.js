@@ -1,7 +1,6 @@
 // Enheduanna Dashboard Client Logic
 
 (function () {
-  let authToken = "";
   let activeSessionId = "";
   let traceSource = null;
   let isGenerating = false;
@@ -33,62 +32,21 @@
   const settingsBtn = document.getElementById("settings-btn");
   const closeSettingsBtn = document.getElementById("close-settings-btn");
   const saveSettingsBtn = document.getElementById("save-settings-btn");
-  const tokenPromptModal = document.getElementById("token-prompt-modal");
-  const initialTokenInput = document.getElementById("initial-token-input");
-  const submitTokenBtn = document.getElementById("submit-token-btn");
 
   // Settings inputs
   const settingProvider = document.getElementById("setting-provider");
   const settingBaseUrl = document.getElementById("setting-base-url");
   const settingModelName = document.getElementById("setting-model-name");
   const settingApiKey = document.getElementById("setting-api-key");
-  const settingLocalToken = document.getElementById("setting-local-token");
 
-  // 1. Authentication Initialization
-  function initAuth() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const queryToken = urlParams.get("token");
-
-    if (queryToken) {
-      authToken = queryToken;
-      sessionStorage.setItem("enheduanna_token", queryToken);
-      // Clean URL query parameter for security
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } else {
-      authToken = sessionStorage.getItem("enheduanna_token") || "";
-    }
-
-    if (!authToken) {
-      tokenPromptModal.classList.remove("hidden");
-    } else {
-      bootstrap();
-    }
-  }
-
-  submitTokenBtn.addEventListener("click", () => {
-    const val = initialTokenInput.value.trim();
-    if (val) {
-      authToken = val;
-      sessionStorage.setItem("enheduanna_token", val);
-      tokenPromptModal.classList.add("hidden");
-      bootstrap();
-    }
-  });
-
-  // 2. HTTP Helper with Auth
+  // HTTP Helper
   async function apiFetch(endpoint, options = {}) {
     const headers = {
       ...(options.headers || {}),
-      Authorization: `Bearer ${authToken}`,
       "Content-Type": "application/json",
     };
 
-    const res = await fetch(endpoint, { ...options, headers });
-    if (res.status === 401) {
-      tokenPromptModal.classList.remove("hidden");
-      throw new Error("Unauthorized");
-    }
-    return res;
+    return fetch(endpoint, { ...options, headers });
   }
 
   // 3. Bootstrap Services
@@ -165,11 +123,11 @@
     }
   });
 
-  // 6. Live Trace SSE Stream
+  // Live Trace SSE Stream
   function connectTraceStream() {
     if (traceSource) traceSource.close();
 
-    traceSource = new EventSource(`/trace?token=${encodeURIComponent(authToken)}`);
+    traceSource = new EventSource("/trace");
 
     traceSource.onmessage = (event) => {
       try {
@@ -451,7 +409,6 @@
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
           sessionId: activeSessionId,
@@ -568,10 +525,9 @@
     });
   });
 
-  // 10. Settings Modal
+  // Settings Modal
   settingsBtn.addEventListener("click", async () => {
     settingsModal.classList.remove("hidden");
-    settingLocalToken.value = authToken;
 
     try {
       const res = await apiFetch("/api/config");
@@ -597,11 +553,6 @@
 
     if (settingApiKey.value.trim()) {
       payload.apiKey = settingApiKey.value.trim();
-    }
-
-    if (settingLocalToken.value.trim()) {
-      authToken = settingLocalToken.value.trim();
-      sessionStorage.setItem("enheduanna_token", authToken);
     }
 
     try {
@@ -630,5 +581,5 @@
   }
 
   // Initialize
-  initAuth();
+  bootstrap();
 })();
