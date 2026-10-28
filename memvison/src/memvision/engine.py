@@ -234,11 +234,15 @@ class CaptureEngine:
         ocr_text = self.ocr_engine.extract_text(img)
         ocr_duration_ms = (time.perf_counter() - ocr_start) * 1000
 
-        # 7.1 Text-Level Privacy Gating (Redact API keys, tokens, credentials)
+        # 7.1 Text-Level & URL Privacy Gating (Redact API keys, tokens, OAuth state, doc hashes)
         sanitized_ocr, ocr_redact_count, ocr_matched_rules = self.privacy_gate.redact_text(ocr_text)
         sanitized_title, title_redact_count, title_matched_rules = self.privacy_gate.redact_text(ctx.window_title)
-        total_redactions = ocr_redact_count + title_redact_count
-        all_matched_rules = list(set(ocr_matched_rules + title_matched_rules))
+        sanitized_url, url_redact_count, url_matched_rules = (
+            self.privacy_gate.redact_url(ctx.url) if ctx.url else (None, 0, [])
+        )
+
+        total_redactions = ocr_redact_count + title_redact_count + url_redact_count
+        all_matched_rules = list(set(ocr_matched_rules + title_matched_rules + url_matched_rules))
 
         if total_redactions > 0:
             logger.info(
@@ -312,7 +316,9 @@ class CaptureEngine:
                 draft_count = (self._last_saved_record.metadata or {}).get("draft_accumulations", 0) + 1
 
                 self._last_saved_record.timestamp = now.isoformat()
+                self._last_saved_record.url = sanitized_url
                 self._last_saved_record.ocr_text = sanitized_ocr
+                self._last_saved_record.file_path = ctx.file_path
                 self._last_saved_record.screenshot_path = saved_path
                 self._last_saved_record.phash = hash_str
                 self._last_saved_record.width = img.width
@@ -326,6 +332,9 @@ class CaptureEngine:
                     "accumulated_chars": len(sanitized_ocr),
                     "ocr_duration_ms": round(ocr_duration_ms, 2),
                     "storage_dimensions": f"{thumb_w}x{thumb_h}",
+                    "file_path": ctx.file_path,
+                    "workspace_path": ctx.workspace_path,
+                    "is_ide": ctx.is_ide,
                 })
 
                 self.storage.update_capture(prev_id, self._last_saved_record)
@@ -366,13 +375,14 @@ class CaptureEngine:
             timestamp=now.isoformat(),
             app_name=ctx.app_name,
             window_title=sanitized_title,
-            url=ctx.url,
+            url=sanitized_url,
             ocr_text=sanitized_ocr,
             screenshot_path=saved_path,
             phash=hash_str,
             width=img.width,
             height=img.height,
             is_redacted=is_redacted_flag,
+            file_path=ctx.file_path,
             metadata={
                 "change_distance": distance,
                 "ocr_duration_ms": round(ocr_duration_ms, 2),
@@ -383,6 +393,9 @@ class CaptureEngine:
                 "is_spatially_masked": bool(blocked_windows),
                 "content_redacted_count": total_redactions,
                 "content_redacted_rules": all_matched_rules,
+                "file_path": ctx.file_path,
+                "workspace_path": ctx.workspace_path,
+                "is_ide": ctx.is_ide,
             },
         )
         record_id = self.storage.save_capture(record)
@@ -392,12 +405,14 @@ class CaptureEngine:
 
         redact_info = f" [REDACTED: {total_redactions} tokens]" if total_redactions > 0 else ""
         mask_info = f" [MASKED: {', '.join(set(masked_names))}]" if masked_names else ""
+        file_info = f" | File='{Path(ctx.file_path).name}'" if ctx.file_path else ""
         logger.info(
-            "📸 CAPTURE #%d: App='%s' | Title='%.40s...' | URL=%s | OCR=%d chars (%.1fms)%s%s",
+            "📸 CAPTURE #%d: App='%s' | Title='%.40s...' | URL=%s%s | OCR=%d chars (%.1fms)%s%s",
             record_id,
             ctx.app_name,
             sanitized_title,
-            ctx.url or "None",
+            sanitized_url or "None",
+            file_info,
             len(sanitized_ocr),
             ocr_duration_ms,
             mask_info,

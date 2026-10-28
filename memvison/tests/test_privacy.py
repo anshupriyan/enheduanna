@@ -135,10 +135,66 @@ def test_blocked_window_titles_omniroute():
     assert not res_env.is_allowed
 
 
+def test_url_query_secrets_google_signin_and_doc_hash():
+    gate = PrivacyGatekeeper(enabled=True)
+
+    # 1. Google sign-in link with OAuth state & code
+    raw_google_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?"
+        "client_id=123456789.apps.googleusercontent.com&"
+        "redirect_uri=https://example.com/oauth/callback&"
+        "response_type=code&"
+        "scope=openid%20email&"
+        "state=4_0AY0e-g7SecRetOAuthStAte987654321&"
+        "nonce=nonce1234567890abcdef"
+    )
+    sanitized_url, count, matched = gate.redact_url(raw_google_url)
+    assert count >= 1
+    assert "4_0AY0e-g7SecRetOAuthStAte987654321" not in sanitized_url
+    assert "nonce1234567890abcdef" not in sanitized_url
+    assert "client_id=123456789.apps.googleusercontent.com" in sanitized_url
+    assert "state=[REDACTED_OAUTH_STATE]" in sanitized_url or "[REDACTED" in sanitized_url
+
+    # 2. Document viewer URL with long viewer hash parameter
+    doc_viewer_url = (
+        "https://docs.google.com/viewer?"
+        "docid=doc_abc123&"
+        "hash=4a8f9b0c1d2e3f4a5b6c7d8e9f0a1b2c&"
+        "authuser=0"
+    )
+    sanitized_doc, doc_count, _ = gate.redact_url(doc_viewer_url)
+    assert doc_count >= 1
+    assert "4a8f9b0c1d2e3f4a5b6c7d8e9f0a1b2c" not in sanitized_doc
+    assert "[REDACTED_DOC_HASH]" in sanitized_doc or "[REDACTED" in sanitized_doc
+    assert "docid=doc_abc123" in sanitized_doc
+
+    # 3. Document viewer URL with long fragment hash (#...)
+    hash_fragment_url = "https://example.com/viewer#8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c"
+    sanitized_frag, frag_count, _ = gate.redact_url(hash_fragment_url)
+    assert frag_count >= 1
+    assert "8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c" not in sanitized_frag
+    assert "[REDACTED_DOC_HASH]" in sanitized_frag
+
+    # 4. Scrubber on OCR text containing URL with query secrets
+    sample_text = (
+        "User browser history:\n"
+        "Navigated to https://login.example.com/authorize?client_id=myclient&state=oauthSecretState12345&code=authCode99887766\n"
+        "Viewing document https://internal.corp/viewer#3f8a9b0c1d2e3f4a5b6c7d8e9f"
+    )
+    sanitized_text, text_count, text_matched = gate.redact_text(sample_text)
+    assert text_count >= 2
+    assert "oauthSecretState12345" not in sanitized_text
+    assert "authCode99887766" not in sanitized_text
+    assert "3f8a9b0c1d2e3f4a5b6c7d8e9f" not in sanitized_text
+    assert "client_id=myclient" in sanitized_text
+
+
 if __name__ == "__main__":
     test_blocklist_blocks_sensitive_apps()
     test_redact_action()
     test_allowlist_mode()
     test_redact_text_api_keys()
     test_blocked_window_titles_omniroute()
+    test_url_query_secrets_google_signin_and_doc_hash()
     print("All Privacy Gatekeeper tests passed!")
+

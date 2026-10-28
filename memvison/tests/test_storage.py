@@ -88,6 +88,45 @@ def test_storage_crud_and_fts():
         assert stats["database_size_bytes"] > 0
 
 
+def test_storage_file_path_and_url_sanitization():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test_path_sanitization.db"
+        storage = MemoryStorage(db_path=db_path, enable_fts=True)
+
+        rec = CaptureRecord(
+            app_name="code.exe",
+            window_title="memvison - Antigravity IDE - README.md",
+            file_path=r"C:\meta hackathon\memvison\README.md",
+            url="https://accounts.google.com/o/oauth2/auth?client_id=myclient&state=leaked_oauth_state_12345678",
+            ocr_text="Documentation for memvision memory capture.",
+        )
+        rec_id = storage.save_capture(rec)
+        assert rec_id > 0
+
+        # Retrieve and verify file_path
+        fetched = storage.get_by_id(rec_id)
+        assert fetched is not None
+        assert fetched.file_path == r"C:\meta hackathon\memvison\README.md"
+
+        # Search by file_path
+        results = storage.search(file_path="README.md")
+        assert len(results) == 1
+        assert results[0].id == rec_id
+
+        # Retroactive sanitization purges leaked OAuth state from URL
+        from memvision.privacy import PrivacyGatekeeper
+        gate = PrivacyGatekeeper(enabled=True)
+        res_san = storage.sanitize_database(privacy_gate=gate)
+        assert res_san["records_sanitized"] >= 1
+
+        sanitized_rec = storage.get_by_id(rec_id)
+        assert "leaked_oauth_state_12345678" not in sanitized_rec.url
+        assert "[REDACTED_OAUTH_STATE]" in sanitized_rec.url
+        assert sanitized_rec.is_redacted == 1
+
+
 if __name__ == "__main__":
     test_storage_crud_and_fts()
+    test_storage_file_path_and_url_sanitization()
     print("All Storage tests passed!")
+

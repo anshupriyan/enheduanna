@@ -34,6 +34,7 @@ class CaptureRecord:
     is_redacted: int = 0
     metadata: Optional[Dict[str, Any]] = None
     episode_id: Optional[int] = None
+    file_path: Optional[str] = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -130,7 +131,7 @@ class MemoryStorage:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_episodes_time ON episodes(start_time DESC);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_episodes_app ON episodes(app_name);")
 
-            # Migration: Ensure episode_id column exists on captures table
+            # Migration: Ensure episode_id and file_path columns exist on captures table
             cursor = conn.execute("PRAGMA table_info(captures);")
             cols = [r[1] for r in cursor.fetchall()]
             if "episode_id" not in cols:
@@ -139,6 +140,13 @@ class MemoryStorage:
                 except sqlite3.OperationalError:
                     pass
             conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_episode ON captures(episode_id);")
+
+            if "file_path" not in cols:
+                try:
+                    conn.execute("ALTER TABLE captures ADD COLUMN file_path TEXT;")
+                except sqlite3.OperationalError:
+                    pass
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_file_path ON captures(file_path);")
 
             # Setup FTS5 full-text search table if supported
             if self.enable_fts:
@@ -203,8 +211,8 @@ class MemoryStorage:
                 """
                 INSERT INTO captures (
                     timestamp, app_name, window_title, url, ocr_text,
-                    screenshot_path, phash, width, height, is_redacted, metadata, episode_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    screenshot_path, phash, width, height, is_redacted, metadata, episode_id, file_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.timestamp,
@@ -219,6 +227,7 @@ class MemoryStorage:
                     record.is_redacted,
                     meta_json,
                     record.episode_id,
+                    record.file_path,
                 ),
             )
             record.id = cursor.lastrowid
@@ -254,7 +263,8 @@ class MemoryStorage:
                     width = ?,
                     height = ?,
                     is_redacted = ?,
-                    metadata = ?
+                    metadata = ?,
+                    file_path = ?
                 WHERE id = ?;
                 """,
                 (
@@ -269,6 +279,7 @@ class MemoryStorage:
                     record.height,
                     record.is_redacted,
                     meta_json,
+                    record.file_path,
                     record_id,
                 ),
             )
@@ -282,10 +293,11 @@ class MemoryStorage:
         since: Optional[str] = None,
         until: Optional[str] = None,
         app_name: Optional[str] = None,
+        file_path: Optional[str] = None,
     ) -> List[CaptureRecord]:
         """
-        Search memory for keywords in app_name, window_title, url, or OCR text.
-        Supports time bounding (since/until) and application filtering (app_name)
+        Search memory for keywords in app_name, window_title, url, file_path, or OCR text.
+        Supports time bounding (since/until), application filtering (app_name), and file path filtering
         accelerated by composite B-Tree indexes.
         Uses FTS5 ranking when available, falling back to LIKE.
         """
@@ -306,6 +318,9 @@ class MemoryStorage:
                 if app_name:
                     where_clauses.append("app_name LIKE ?")
                     params.append(f"%{app_name}%")
+                if file_path:
+                    where_clauses.append("file_path LIKE ?")
+                    params.append(f"%{file_path}%")
 
                 where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
                 sql = f"SELECT * FROM captures {where_sql} ORDER BY timestamp DESC LIMIT ?;"
@@ -330,6 +345,9 @@ class MemoryStorage:
                     if app_name:
                         where_clauses.append("c.app_name LIKE ?")
                         params.append(f"%{app_name}%")
+                    if file_path:
+                        where_clauses.append("c.file_path LIKE ?")
+                        params.append(f"%{file_path}%")
 
                     where_sql = " AND ".join(where_clauses)
                     sql = f"""
@@ -349,9 +367,9 @@ class MemoryStorage:
             # 3. Fallback LIKE query with time & app filters
             pattern = f"%{clean_query}%"
             where_clauses = [
-                "(c.app_name LIKE ? OR c.window_title LIKE ? OR c.url LIKE ? OR c.ocr_text LIKE ?)"
+                "(c.app_name LIKE ? OR c.window_title LIKE ? OR c.url LIKE ? OR c.ocr_text LIKE ? OR (c.file_path IS NOT NULL AND c.file_path LIKE ?))"
             ]
-            params = [pattern, pattern, pattern, pattern]
+            params = [pattern, pattern, pattern, pattern, pattern]
             if since:
                 where_clauses.append("c.timestamp >= ?")
                 params.append(since)
@@ -361,6 +379,9 @@ class MemoryStorage:
             if app_name:
                 where_clauses.append("c.app_name LIKE ?")
                 params.append(f"%{app_name}%")
+            if file_path:
+                where_clauses.append("c.file_path LIKE ?")
+                params.append(f"%{file_path}%")
 
             where_sql = " AND ".join(where_clauses)
             sql = f"""
@@ -481,11 +502,14 @@ class MemoryStorage:
                 decision = privacy_gate.evaluate(app_name=app, window_title=title, url=url)
                 title_blocked = not decision.is_allowed
 
-                # 2. Redact text
+                # 2. Redact text and URL secrets
                 sanitized_ocr, ocr_count, ocr_rules = privacy_gate.redact_text(ocr)
                 sanitized_title, title_count, title_rules = privacy_gate.redact_text(title)
+                sanitized_url, url_count, url_rules = (
+                    privacy_gate.redact_url(url) if hasattr(privacy_gate, "redact_url") else (url, 0, [])
+                )
 
-                row_redactions = ocr_count + title_count
+                row_redactions = ocr_count + title_count + url_count
                 should_update = False
 
                 if title_blocked and "[REDACTED BY PRIVACY RULE" not in sanitized_ocr:
@@ -495,7 +519,13 @@ class MemoryStorage:
                     row_redactions += 1
                     should_update = True
 
-                if row_redactions > 0 or sanitized_ocr != ocr or sanitized_title != title or (title_blocked and curr_redacted != 1):
+                if (
+                    row_redactions > 0
+                    or sanitized_ocr != ocr
+                    or sanitized_title != title
+                    or sanitized_url != url
+                    or (title_blocked and curr_redacted != 1)
+                ):
                     should_update = True
 
                 if should_update:
@@ -508,12 +538,13 @@ class MemoryStorage:
                         """
                         UPDATE captures
                         SET window_title = ?,
+                            url = ?,
                             ocr_text = ?,
                             is_redacted = 1,
                             metadata = ?
                         WHERE id = ?;
                         """,
-                        (sanitized_title, sanitized_ocr, json.dumps(meta), rec_id)
+                        (sanitized_title, sanitized_url, sanitized_ocr, json.dumps(meta), rec_id)
                     )
 
             conn.commit()
@@ -538,6 +569,9 @@ class MemoryStorage:
                 meta = None
 
         ep_id = row["episode_id"] if "episode_id" in row.keys() else None
+        fp = row["file_path"] if "file_path" in row.keys() else None
+        if not fp and meta:
+            fp = meta.get("file_path")
 
         return CaptureRecord(
             id=row["id"],
@@ -553,6 +587,7 @@ class MemoryStorage:
             is_redacted=row["is_redacted"] or 0,
             metadata=meta,
             episode_id=ep_id,
+            file_path=fp,
         )
 
     def cluster_or_create_episode(

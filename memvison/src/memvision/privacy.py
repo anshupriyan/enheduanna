@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -68,6 +69,16 @@ DEFAULT_REDACTION_PATTERNS: List[Dict[str, str]] = [
         "name": "Private Key Headers",
         "pattern": r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
         "replacement": "[REDACTED_PRIVATE_KEY_BLOCK]",
+    },
+    {
+        "name": "URL Query-String Secrets & OAuth State",
+        "pattern": r"(?i)(?<=[?&])(?:state|code|access_token|refresh_token|id_token|auth(?:_token)?|token|secret|client_secret|api[_-]?key|session(?:_id)?|passwd|password|sig|signature|nonce|ticket|code_verifier|code_challenge)=([^&\s\"'<>#\[\]]{6,})",
+        "replacement": "[REDACTED_QUERY_SECRET]",
+    },
+    {
+        "name": "Document Viewer Hashes & URL Token Fragments",
+        "pattern": r"(?i)(?:[#&?](?:view(?:er)?_hash|doc_hash|token|hash|state)=|[#](?=[a-zA-Z0-9_\-]{20,}))([a-zA-Z0-9_\-]{20,})",
+        "replacement": "[REDACTED_DOC_HASH]",
     },
 ]
 
@@ -218,6 +229,147 @@ class PrivacyGatekeeper:
                 sanitized = pattern_re.sub(_replace_match, sanitized)
 
         return sanitized, total_redacted, matched_names
+
+    def redact_url(self, url: Optional[str]) -> Tuple[Optional[str], int, List[str]]:
+        """
+        Scans and sanitizes a URL for sensitive query parameters (OAuth state, auth codes,
+        API keys, access tokens, passwords, signatures) and document-viewer hashes or fragments.
+        Returns:
+            (sanitized_url, count_of_redactions, list_of_matched_rule_names)
+        """
+        if not url or not self.enabled:
+            return url, 0, []
+
+        self.reload_rules(force=False)
+
+        raw_url = url.strip()
+        if not raw_url:
+            return url, 0, []
+
+        total_redacted = 0
+        matched_rules: List[str] = []
+
+        try:
+            parts = urllib.parse.urlsplit(raw_url)
+        except Exception:
+            sanitized, count, matched = self.redact_text(raw_url)
+            return sanitized, count, matched
+
+        # 1. Sanitize Query Parameters
+        sanitized_query = parts.query
+        if parts.query:
+            query_items = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+            new_query_items = []
+            sensitive_exact = {
+                "state", "code", "access_token", "refresh_token", "id_token", "token",
+                "auth", "authtoken", "auth_token", "authuser", "secret", "client_secret",
+                "key", "apikey", "api_key", "password", "pwd", "passwd", "session",
+                "session_id", "sessionid", "sig", "signature", "nonce", "ticket",
+                "code_verifier", "code_challenge", "samlart", "relaystate", "assertion",
+                "view_token", "hash", "doc_hash", "viewer_hash"
+            }
+            public_params = {
+                "client_id", "redirect_uri", "response_type", "response_mode",
+                "scope", "prompt", "display", "login_hint", "domain", "hl",
+                "flowname", "flowentry", "service", "passive", "continue",
+                "docid", "file", "id", "q", "query", "search", "lang", "tab",
+                "view", "page", "v", "version", "t", "time", "format", "sort"
+            }
+            query_changed = False
+            for key, val in query_items:
+                k_low = key.lower().strip()
+                val_clean = val.strip()
+
+                if k_low in public_params:
+                    new_query_items.append((key, val))
+                    continue
+
+                is_sensitive_key = (
+                    k_low in sensitive_exact
+                    or any(sub in k_low for sub in ("token", "secret", "passwd", "password", "signature", "auth"))
+                )
+                is_long_hex_or_b64 = (
+                    len(val_clean) >= 32
+                    and "." not in val_clean
+                    and "/" not in val_clean
+                    and bool(re.match(r"^[a-zA-Z0-9_\-]+$", val_clean))
+                )
+
+                if (is_sensitive_key or is_long_hex_or_b64) and val_clean:
+                    if k_low == "state":
+                        new_val = "[REDACTED_OAUTH_STATE]"
+                        rule_name = "OAuth State Query Parameter"
+                    elif k_low in ("hash", "doc_hash", "viewer_hash") or ("viewer" in parts.path.lower() and "hash" in k_low):
+                        new_val = "[REDACTED_DOC_HASH]"
+                        rule_name = "Document Viewer Hash Query Parameter"
+                    else:
+                        new_val = "[REDACTED_QUERY_SECRET]"
+                        rule_name = f"URL Query Secret ({key})"
+
+                    new_query_items.append((key, new_val))
+                    total_redacted += 1
+                    matched_rules.append(rule_name)
+                    query_changed = True
+                else:
+                    new_query_items.append((key, val))
+
+            if query_changed:
+                sanitized_query = urllib.parse.urlencode(new_query_items, safe="[]:/?#@!$&'()*+,;=")
+
+        # 2. Sanitize Fragment (#...)
+        sanitized_fragment = parts.fragment
+        if parts.fragment:
+            frag_raw = parts.fragment
+            if "=" in frag_raw:
+                try:
+                    frag_items = urllib.parse.parse_qsl(frag_raw, keep_blank_values=True)
+                    if frag_items:
+                        new_frag_items = []
+                        frag_changed = False
+                        for fk, fv in frag_items:
+                            fk_low = fk.lower().strip()
+                            if fk_low in sensitive_exact or any(sub in fk_low for sub in ("token", "secret", "state", "hash")):
+                                if fk_low == "state":
+                                    repl_val = "[REDACTED_OAUTH_STATE]"
+                                elif "hash" in fk_low:
+                                    repl_val = "[REDACTED_DOC_HASH]"
+                                else:
+                                    repl_val = "[REDACTED_SECRET]"
+                                new_frag_items.append((fk, repl_val))
+                                total_redacted += 1
+                                matched_rules.append(f"OAuth Fragment Secret ({fk})")
+                                frag_changed = True
+                            else:
+                                new_frag_items.append((fk, fv))
+                        if frag_changed:
+                            sanitized_fragment = urllib.parse.urlencode(new_frag_items, safe="[]:/?#@!$&'()*+,;=")
+                except Exception:
+                    pass
+
+            if sanitized_fragment == parts.fragment and len(frag_raw) >= 16 and re.match(r"^[a-zA-Z0-9_\-\.%]+$", frag_raw):
+                sanitized_fragment = "[REDACTED_DOC_HASH]"
+                total_redacted += 1
+                matched_rules.append("Document Viewer Hash Fragment")
+
+        # 3. Sanitize Path (Document Viewer hashes embedded in path segments)
+        sanitized_path = parts.path
+        if parts.path:
+            doc_path_match = re.search(r"/(?:viewer|doc-viewer|document-viewer|pdf-viewer)/([a-zA-Z0-9_\-]{20,})", sanitized_path, re.IGNORECASE)
+            if doc_path_match:
+                hash_val = doc_path_match.group(1)
+                sanitized_path = sanitized_path.replace(hash_val, "[REDACTED_DOC_HASH]")
+                total_redacted += 1
+                matched_rules.append("Document Viewer Path Hash")
+
+        rebuilt_url = urllib.parse.urlunsplit((parts.scheme, parts.netloc, sanitized_path, sanitized_query, sanitized_fragment))
+
+        # 4. Run regex text patterns on the rebuilt URL as defense-in-depth
+        final_url, text_redact_count, text_matched = self.redact_text(rebuilt_url)
+        total_redacted += text_redact_count
+        matched_rules.extend(text_matched)
+
+        return final_url, total_redacted, list(set(matched_rules))
+
 
     @staticmethod
     def _matches_pattern(value: str, pattern: str) -> bool:

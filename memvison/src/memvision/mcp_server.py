@@ -71,6 +71,10 @@ class MCPServer:
                             "type": "string",
                             "description": "Optional application process name filter (e.g., 'code.exe', 'chrome.exe').",
                         },
+                        "file_path": {
+                            "type": "string",
+                            "description": "Optional file path or filename filter (e.g. 'README.md', 'c:/projects/app/main.py').",
+                        },
                     },
                     "required": ["query"],
                 },
@@ -135,13 +139,15 @@ class MCPServer:
             since = args.get("since")
             until = args.get("until")
             app_name = args.get("app_name")
-            records = self.storage.search(query, limit=limit, since=since, until=until, app_name=app_name)
+            file_path = args.get("file_path")
+            records = self.storage.search(query, limit=limit, since=since, until=until, app_name=app_name, file_path=file_path)
             return [
                 {
                     "id": r.id,
                     "timestamp": r.timestamp,
                     "app_name": r.app_name,
                     "window_title": r.window_title,
+                    "file_path": r.file_path,
                     "url": r.url,
                     "ocr_snippet": r.ocr_text[:300] if r.ocr_text else "",
                     "screenshot_path": r.screenshot_path,
@@ -158,6 +164,7 @@ class MCPServer:
                     "timestamp": r.timestamp,
                     "app_name": r.app_name,
                     "window_title": r.window_title,
+                    "file_path": r.file_path,
                     "url": r.url,
                     "ocr_snippet": r.ocr_text[:300] if r.ocr_text else "",
                     "screenshot_path": r.screenshot_path,
@@ -175,6 +182,7 @@ class MCPServer:
                 "timestamp": record.timestamp,
                 "app_name": record.app_name,
                 "window_title": record.window_title,
+                "file_path": record.file_path,
                 "url": record.url,
                 "full_ocr_text": record.ocr_text,
                 "screenshot_path": record.screenshot_path,
