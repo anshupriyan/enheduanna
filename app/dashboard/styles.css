@@ -513,6 +513,128 @@ body {
   margin: 8px 0;
 }
 
+/* Turn Progress Indicator (Cycling Circle & Bouncing Dots) */
+.turn-progress-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(13, 19, 29, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  padding: 8px 14px;
+  margin: 6px 0 10px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.progress-spinner-wrap {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cycling-circle {
+  width: 16px;
+  height: 16px;
+  animation: cycling-spin 0.85s linear infinite;
+  transform-origin: center center;
+}
+
+.cycling-circle .track {
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 2.5;
+  fill: none;
+}
+
+.cycling-circle .head {
+  stroke: var(--accent-cyan);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 22 45;
+  fill: none;
+}
+
+@keyframes cycling-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.progress-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progress-status-text {
+  color: #e2e8f0;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.progress-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.dot-bounce {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: var(--accent-cyan);
+  display: inline-block;
+  animation: dot-pulse 1.3s infinite ease-in-out both;
+}
+
+.dot-bounce:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.dot-bounce:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+.dot-bounce:nth-child(3) {
+  animation-delay: 0s;
+}
+
+@keyframes dot-pulse {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1.2);
+    opacity: 1;
+    box-shadow: 0 0 6px rgba(56, 189, 248, 0.7);
+  }
+}
+
+/* Send Button Loading State */
+.btn-primary.btn-loading {
+  background-color: var(--bg-surface-hover);
+  border-color: var(--border-subtle);
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.btn-loading svg {
+  animation: cycling-spin 0.85s linear infinite;
+  stroke: var(--accent-cyan);
+}
+
 .tool-group-card {
   width: 100%;
   max-width: 680px;

@@ -416,6 +416,44 @@
     }
   }
 
+  function createProgressIndicator(container, initialText = "Thinking...") {
+    const el = document.createElement("div");
+    el.className = "turn-progress-indicator";
+    el.innerHTML = `
+      <div class="progress-spinner-wrap">
+        <svg class="cycling-circle" viewBox="0 0 24 24">
+          <circle class="track" cx="12" cy="12" r="9"></circle>
+          <circle class="head" cx="12" cy="12" r="9"></circle>
+        </svg>
+      </div>
+      <div class="progress-info">
+        <span class="progress-status-text">${escapeHtml(initialText)}</span>
+        <span class="progress-dots">
+          <span class="dot-bounce"></span>
+          <span class="dot-bounce"></span>
+          <span class="dot-bounce"></span>
+        </span>
+      </div>
+    `;
+    container.appendChild(el);
+    return {
+      element: el,
+      setText(text) {
+        const label = el.querySelector(".progress-status-text");
+        if (label) label.textContent = text;
+        if (container.lastElementChild !== el) {
+          container.appendChild(el);
+        }
+        messagesStream.scrollTop = messagesStream.scrollHeight;
+      },
+      remove() {
+        if (el && el.parentNode) {
+          el.remove();
+        }
+      },
+    };
+  }
+
   // 9. Send Message Stream Handling
   chatForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -428,9 +466,16 @@
 
     isGenerating = true;
     sendBtn.disabled = true;
+    sendBtn.classList.add("btn-loading");
+    sendBtn.innerHTML = `
+      <svg class="btn-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="24 45"></circle>
+      </svg>
+    `;
 
-    // Create assistant message row and chronological turn content container
+    // Create assistant message row, turn content, and progress indicator
     const turnContent = createAssistantRow();
+    const progressIndicator = createProgressIndicator(turnContent, "Analyzing request & screen memory...");
     let activeTextBubble = null;
     let activeBubbleText = "";
     let currentToolGroupEl = null;
@@ -448,6 +493,7 @@
       });
 
       if (!response.ok) {
+        progressIndicator.remove();
         const err = await response.text();
         const errBubble = document.createElement("div");
         errBubble.className = "message-bubble";
@@ -455,6 +501,10 @@
         turnContent.appendChild(errBubble);
         isGenerating = false;
         sendBtn.disabled = false;
+        sendBtn.classList.remove("btn-loading");
+        sendBtn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        `;
         return;
       }
 
@@ -500,6 +550,12 @@
               stepBadge.textContent = data.isSynthesis
                 ? `Synthesizing final answer... (Step ${data.step}/${data.maxSteps})`
                 : `Step ${data.step} of ${data.maxSteps}`;
+
+              progressIndicator.setText(
+                data.isSynthesis
+                  ? `Synthesizing final answer (Step ${data.step}/${data.maxSteps})...`
+                  : `Step ${data.step} of ${data.maxSteps}: Running reasoning...`
+              );
             } else if (eventType === "tool_group_start") {
               // End text bubble; create group card for parallel tools
               activeTextBubble = null;
@@ -519,6 +575,12 @@
               `;
               currentToolGroupEl.appendChild(groupHeader);
               turnContent.appendChild(currentToolGroupEl);
+
+              progressIndicator.setText(
+                count > 1
+                  ? `Executing ${count} parallel tools concurrently...`
+                  : `Executing tool: ${data.toolCalls?.[0]?.name || "tool"}...`
+              );
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "tool_call_start") {
               const chip = createToolChip(data.id, data.name, data.args);
@@ -527,6 +589,7 @@
               } else {
                 turnContent.appendChild(chip);
               }
+              progressIndicator.setText(`Executing ${data.name}...`);
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "tool_call_done") {
               appendInlineToolResult(data.id, data.name, data.resultPreview, {
@@ -534,6 +597,7 @@
                 isRepeated: data.isRepeated,
                 durationMs: data.durationMs,
               });
+              progressIndicator.setText(`Finished ${data.name}, processing...`);
             } else if (eventType === "tool_group_done") {
               const headerEl = document.getElementById(`tool-group-header-step-${data.step}`);
               if (headerEl) {
@@ -543,6 +607,7 @@
                   <span>${count > 1 ? `${count} parallel tool calls (${data.wallClockMs}ms wall-clock)` : `Tool call completed (${data.wallClockMs}ms)`}</span>
                 `;
               }
+              progressIndicator.setText(`Tool group finished (${data.wallClockMs}ms). Formulating next step...`);
             } else if (eventType === "step_cap_reached") {
               const capEl = document.createElement("div");
               capEl.className = "step-cap-warning";
@@ -551,8 +616,12 @@
                 <span>Step limit reached (${data.maxSteps}/${data.maxSteps}) — synthesizing final answer</span>
               `;
               turnContent.appendChild(capEl);
+              progressIndicator.setText(`Synthesizing final answer from available evidence...`);
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "delta") {
+              // Final answer started streaming: remove the progress indicator
+              progressIndicator.remove();
+
               if (!activeTextBubble) {
                 activeTextBubble = document.createElement("div");
                 activeTextBubble.className = "message-bubble";
@@ -563,26 +632,34 @@
               activeTextBubble.innerHTML = renderMarkdown(activeBubbleText);
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "error") {
+              progressIndicator.remove();
               const errEl = document.createElement("div");
               errEl.className = "message-bubble";
               errEl.style.color = "var(--accent-red)";
               errEl.textContent = `[Error: ${data.error}]`;
               turnContent.appendChild(errEl);
             } else if (eventType === "done") {
+              progressIndicator.remove();
               await loadSessions();
             }
           } catch {}
         }
       }
     } catch (err) {
+      progressIndicator.remove();
       const errBubble = document.createElement("div");
       errBubble.className = "message-bubble";
       errBubble.style.color = "var(--accent-red)";
       errBubble.textContent = `[Request failed: ${err.message}]`;
       turnContent.appendChild(errBubble);
     } finally {
+      progressIndicator.remove();
       isGenerating = false;
       sendBtn.disabled = false;
+      sendBtn.classList.remove("btn-loading");
+      sendBtn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      `;
       userInput.focus();
     }
   });
