@@ -25,6 +25,8 @@ memvison/data/screenshots/*
 .env
 .env.local
 *.local
+enheduanna.config.json
+!enheduanna.config.example.json
 
 # IDE & Editor caches
 .vscode/

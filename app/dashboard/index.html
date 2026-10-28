@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enheduanna — Desktop Intelligence & MCP Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app-container" class="app-layout">
+    <!-- Top Header Bar -->
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-glyph">𒀭</span>
+        <span class="brand-title">ENHEDUANNA</span>
+        <span class="brand-subtitle">Integration Core</span>
+      </div>
+
+      <!-- Live Connection Pills -->
+      <div class="status-indicators">
+        <div id="model-pill" class="pill pill-model" title="Active Model">
+          <span class="dot"></span>
+          <span id="model-name-text">muse-spark-1.3</span>
+        </div>
+
+        <div id="memvision-pill" class="pill pill-mcp" title="Desktop Screen Memory">
+          <span class="dot"></span>
+          <span>memvision</span>
+        </div>
+
+        <div id="clibridge-pill" class="pill pill-mcp" title="Workspace Execution Bridge">
+          <span class="dot"></span>
+          <span>cli-bridge</span>
+        </div>
+
+        <!-- OCR Screen Capture Loop Toggle -->
+        <button id="capture-toggle-btn" class="pill pill-capture" title="Toggle OCR Screen Capture Loop">
+          <span class="dot pulse"></span>
+          <span id="capture-status-text">Recording (2s)</span>
+        </button>
+      </div>
+
+      <div class="top-actions">
+        <button id="toggle-trace-btn" class="btn btn-icon" title="Toggle Live Trace Panel">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <span>Trace</span>
+        </button>
+        <button id="settings-btn" class="btn btn-icon" title="Settings & API Configuration">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Area -->
+    <div class="workspace-body">
+      <!-- Left Sidebar: Chat Sessions -->
+      <aside class="sessions-sidebar">
+        <div class="sidebar-header">
+          <span>Conversations</span>
+          <button id="new-chat-btn" class="btn btn-sm btn-primary" title="Start a new chat session">+ New</button>
+        </div>
+        <div id="sessions-list" class="sessions-list">
+          <!-- Session items dynamically injected -->
+        </div>
+        <div class="sidebar-footer">
+          <div class="mcp-count-tag" id="mcp-tools-count">18 Tools Active</div>
+        </div>
+      </aside>
+
+      <!-- Center: Main Chat Window -->
+      <main class="chat-container">
+        <div id="messages-stream" class="messages-stream">
+          <!-- Welcome Placeholder -->
+          <div class="chat-welcome" id="chat-welcome">
+            <div class="welcome-glyph">𒀭</div>
+            <h2>Enheduanna Desktop Intelligence</h2>
+            <p>Direct Model Context Protocol bridge connected to your screen memory and local workspace execution.</p>
+            <div class="prompt-chips">
+              <button class="chip" data-prompt="What was on my screen about 10 minutes ago?">"What was on my screen 10 mins ago?"</button>
+              <button class="chip" data-prompt="Search memory for recent terminal commands or code edits.">"Search memory for recent code edits"</button>
+              <button class="chip" data-prompt="List files in the workspace and check project log.">"List workspace files and project log"</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Footer -->
+        <footer class="chat-footer">
+          <form id="chat-form" class="chat-form">
+            <textarea
+              id="user-input"
+              rows="1"
+              placeholder="Ask anything about your screen memory or give workspace commands..."
+              autocomplete="off"
+            ></textarea>
+            <button id="send-btn" type="submit" class="btn btn-primary" title="Send message (Enter)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </form>
+          <div class="footer-meta">
+            <span>Press <kbd>Enter</kbd> to send, <kbd>Shift+Enter</kbd> for new line.</span>
+            <span id="active-provider-label">Meta Model API (muse-spark-1.3)</span>
+          </div>
+        </footer>
+      </main>
+
+      <!-- Right: Live Trace Panel -->
+      <aside id="trace-panel" class="trace-panel">
+        <div class="trace-header">
+          <div class="trace-title">
+            <span class="live-dot"></span>
+            <span>Live System Trace</span>
+          </div>
+          <div class="trace-actions">
+            <button id="clear-trace-btn" class="btn btn-sm btn-ghost">Clear</button>
+          </div>
+        </div>
+        <div id="trace-events" class="trace-events">
+          <!-- Realtime SSE events injected here -->
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>System & API Configuration</h3>
+        <button id="close-settings-btn" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="setting-provider">Provider Layer</label>
+          <select id="setting-provider" class="form-input">
+            <option value="meta">Meta Model API (Official Hosted)</option>
+            <option value="omniroute">Omniroute / Local Gateway</option>
+            <option value="openai">OpenAI Compatible Endpoint</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="setting-base-url">Inference Base URL</label>
+          <input type="text" id="setting-base-url" class="form-input" placeholder="https://api.meta.ai/v1 or http://localhost:20128/v1">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-model-name">Model Name</label>
+          <input type="text" id="setting-model-name" class="form-input" placeholder="muse-spark-1.3, muse-wonder-1.0, etc.">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-api-key">API Key (Saved locally, never logged)</label>
+          <input type="password" id="setting-api-key" class="form-input" placeholder="Enter your Meta API Key or Omniroute token">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-local-token">Localhost Auth Bearer Token</label>
+          <input type="text" id="setting-local-token" class="form-input font-mono" placeholder="Paste local bearer token">
+          <small class="help-text">Found in terminal stdout on core service startup.</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="save-settings-btn" class="btn btn-primary">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Token Prompt Modal (for first load without query token) -->
+  <div id="token-prompt-modal" class="modal-overlay hidden">
+    <div class="modal-card modal-small">
+      <div class="modal-header">
+        <h3>Localhost Authentication</h3>
+      </div>
+      <div class="modal-body">
+        <p>Enter the random 32-byte auth token displayed in your terminal to access the local core service:</p>
+        <input type="text" id="initial-token-input" class="form-input font-mono" placeholder="Paste token here">
+      </div>
+      <div class="modal-footer">
+        <button id="submit-token-btn" class="btn btn-primary">Authenticate</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

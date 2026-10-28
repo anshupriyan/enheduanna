@@ -1,0 +1,30 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 4100
+  },
+  "model": {
+    "provider": "meta",
+    "modelName": "muse-spark-1.3",
+    "baseUrl": "https://api.meta.ai/v1",
+    "reasoningEffort": "medium"
+  },
+  "limits": {
+    "maxSteps": 1,
+    "maxToolResultLength": 4000
+  },
+  "mcpServers": {
+    "memvision": {
+      "command": "memvison/.venv/Scripts/python.exe",
+      "args": ["main.py", "mcp"],
+      "cwd": "memvison",
+      "env": {}
+    },
+    "cli-bridge": {
+      "command": "node",
+      "args": ["build/index.js"],
+      "cwd": "cli-bridge",
+      "env": {}
+    }
+  }
+}

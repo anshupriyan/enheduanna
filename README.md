@@ -57,6 +57,19 @@ Modern desktop AI agents operate with complete amnesia: they cannot perceive wha
 - **The Scribe (`memvison/`)**: Observes, redacts, extracts, and clusters desktop activity into a searchable, privacy-guarded episodic memory.
 - **The Operator (`cli-bridge/`)**: Provides the reasoning model with a policy-bounded, sandboxed execution bridge to run terminal commands, builds, and tools safely.
 
+### 4. Launch Enheduanna Integration Core & Dashboard
+The unified on-device integration layer orchestrates both MCP servers, connects to the Meta Model API (Muse Spark / Wonder) or Omniroute, and serves the localhost dashboard:
+
+```bash
+# Build and run the core service
+cd app/core
+npm install
+npm run build
+npm start
+```
+* Dashboard will launch at `http://127.0.0.1:4100/?token=<auth_token>`
+* Features multi-session chat, live SSE system traces, collapsible tool cards, and a 1-click OCR screen capture loop toggle.
+
 ---
 
 ## Dual-Faculty Architecture
