@@ -147,11 +147,10 @@ def test_spatial_masking_during_capture_tick():
         assert record.metadata.get("is_spatially_masked") is True
         assert "discord.exe" in record.metadata.get("spatial_masked_windows", [])
 
-        # Check that saved screenshot exists and has right half blacked out
-        saved_img = Image.open(record.screenshot_path)
-        # Pixel in Discord region should be dark charcoal/black curtain
-        discord_pixel = saved_img.getpixel((600, 200))
-        assert max(discord_pixel) < 60, f"Expected blacked out pixel, got {discord_pixel}"
+        # Check that saved screenshot exists and is the cropped window of code.exe (Discord region is completely excluded)
+        assert record.screenshot_path is not None
+        with Image.open(record.screenshot_path) as saved_img:
+            assert saved_img.width <= 400, f"Expected cropped window (width<=400), got {saved_img.size}"
 
 
 def test_spatial_rescue_when_clicking_discord_in_windowed_mode():

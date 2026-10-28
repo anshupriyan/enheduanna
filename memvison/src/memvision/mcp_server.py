@@ -69,6 +69,9 @@ class MCPServer:
             configured_db = Path(self.config.storage.database_path)
             resolved_db = configured_db if configured_db.is_absolute() else _project_root / configured_db
         self.storage = MemoryStorage(resolved_db, self.config.storage.enable_fts)
+        self.screenshots_dir = Path(self.config.storage.screenshots_dir)
+        if not self.screenshots_dir.is_absolute():
+            self.screenshots_dir = _project_root / self.screenshots_dir
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         """Returns the schemas of the tools exposed to AI agents."""
@@ -398,6 +401,14 @@ class MCPServer:
                     crop_img = Image.open(win.crop_path).convert("RGB")
                 except Exception as e:
                     logger.debug("Failed to open crop_path %s: %s", win.crop_path, e)
+
+            if crop_img is None and win and win.crop_path:
+                alt = self.screenshots_dir / Path(win.crop_path).name
+                if alt.is_file():
+                    try:
+                        crop_img = Image.open(alt).convert("RGB")
+                    except Exception:
+                        pass
 
             if crop_img is None and cap and cap.screenshot_path and Path(cap.screenshot_path).is_file():
                 try:

@@ -32,9 +32,7 @@ class TestWindowCapturePipeline(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "test_memory.db"
         self.screenshots_dir = Path(self.temp_dir.name) / "screenshots"
-        self.crops_dir = Path(self.temp_dir.name) / "crops"
         self.screenshots_dir.mkdir(parents=True, exist_ok=True)
-        self.crops_dir.mkdir(parents=True, exist_ok=True)
         self.storage = MemoryStorage(db_path=self.db_path, enable_fts=True)
 
     def tearDown(self):
@@ -291,7 +289,7 @@ class TestWindowCapturePipeline(unittest.TestCase):
         mcp = MCPServer(db_path=self.db_path)
 
         # Create dummy crop image with sharp high-contrast text
-        crop_file = self.crops_dir / "crop_test.jpg"
+        crop_file = self.screenshots_dir / "crop_test.jpg"
         crop_img = Image.new("RGB", (300, 100), color=(255, 255, 255))
         d = ImageDraw.Draw(crop_img)
         d.text((10, 10), "SENSITIVE VAULT TEXT", fill=(0, 0, 0))

@@ -63,9 +63,8 @@ class CaptureEngine:
         )
         self.screenshots_dir = Path(self.config.storage.screenshots_dir)
         self.screenshots_dir.mkdir(parents=True, exist_ok=True)
-        self.crops_dir = self.screenshots_dir.parent / "crops"
-        self.crops_dir.mkdir(parents=True, exist_ok=True)
         self._window_text_hashes: dict[Any, str] = {}
+        self._window_crop_paths: dict[Any, str] = {}
 
         self._running = False
         self._step_callbacks: list[Callable[[CaptureRecord], None]] = []
@@ -122,14 +121,14 @@ class CaptureEngine:
 
         return is_video_static, is_draft_expansion, char_sim, containment
 
-    def _prune_crops(self, max_size_mb: int = 500, max_age_days: int = 7) -> int:
-        """Prunes oldest crops if total directory size exceeds max_size_mb or age exceeds max_age_days."""
-        if not self.crops_dir.exists():
+    def _prune_screenshots(self, max_size_mb: int = 500, max_age_days: int = 7) -> int:
+        """Prunes oldest images in screenshots_dir if total directory size exceeds max_size_mb or age exceeds max_age_days."""
+        if not self.screenshots_dir.exists():
             return 0
         try:
             now = time.time()
             max_age_sec = max_age_days * 86400
-            files = list(self.crops_dir.glob("*.jpg"))
+            files = list(self.screenshots_dir.glob("*.jpg"))
             total_bytes = sum(f.stat().st_size for f in files)
             pruned = 0
             if total_bytes > max_size_mb * 1024 * 1024 or any(now - f.stat().st_mtime > max_age_sec for f in files):
@@ -143,7 +142,7 @@ class CaptureEngine:
                         pruned += 1
             return pruned
         except Exception as e:
-            logger.debug("Crop pruning error: %s", e)
+            logger.debug("Screenshot pruning error: %s", e)
             return 0
 
     def capture_once(self, force: bool = False) -> Optional[CaptureRecord]:
@@ -363,7 +362,7 @@ class CaptureEngine:
             self._window_text_hashes[w.hwnd] = text_hash
             self._window_text_hashes[(w.app_name, w.window_title)] = text_hash
 
-            # Save native-resolution JPEG crop (q70, max 1600px wide) only when window text changes or becomes foreground
+            # Save native-resolution JPEG crop (q70, max 1600px wide) directly into screenshots_dir
             crop_path = None
             if w.is_foreground or text_changed or force:
                 crop_to_save = item["crop"]
@@ -373,12 +372,16 @@ class CaptureEngine:
                     crop_to_save = crop_to_save.resize((1600, new_h), Image.Resampling.LANCZOS)
                 app_slug = "".join(c for c in w.app_name.lower() if c.isalnum() or c in "_-")[:12]
                 crop_filename = f"{ts_slug}_z{w.z_index}_{app_slug}_{text_hash[:6]}.jpg"
-                crop_file = self.crops_dir / crop_filename
+                crop_file = self.screenshots_dir / crop_filename
                 try:
                     crop_to_save.save(crop_file, format="JPEG", quality=70, optimize=True)
                     crop_path = str(crop_file)
+                    self._window_crop_paths[w.hwnd] = crop_path
+                    self._window_crop_paths[(w.app_name, w.window_title)] = crop_path
                 except Exception as e:
                     logger.debug("Failed to save window crop %s: %s", crop_file, e)
+            else:
+                crop_path = self._window_crop_paths.get(w.hwnd) or self._window_crop_paths.get((w.app_name, w.window_title))
 
             l, t, r, b = item["rect"]
             w_rec = WindowRecord(
@@ -451,18 +454,25 @@ class CaptureEngine:
                 )
                 return None
 
-        # 8. Save preview image downscaled for storage
-        ts_slug = now.strftime("%Y%m%d_%H%M%S_%f")[:19]
-        fmt_ext = "jpg" if self.config.capture.image_format.lower() in ("jpg", "jpeg") else "webp"
-        filename = f"{ts_slug}_{hash_str[:8]}.{fmt_ext}"
-        screenshot_file = self.screenshots_dir / filename
+        # 8. Link capture screenshot_path to foreground window crop in screenshots_dir (no full-screen capture saved)
+        primary_screenshot_path = None
+        for w_rec in saved_window_records:
+            if w_rec.is_foreground and w_rec.crop_path:
+                primary_screenshot_path = w_rec.crop_path
+                break
+        if not primary_screenshot_path and saved_window_records:
+            for w_rec in saved_window_records:
+                if w_rec.crop_path:
+                    primary_screenshot_path = w_rec.crop_path
+                    break
 
-        preview_img = img
-        if blocked_windows:
-            preview_img = img.copy()
-            self.capturer.redact_blocked_windows(preview_img, blocked_windows, stamp_badge=True)
-
-        saved_path, thumb_w, thumb_h = self.capturer.save_image(preview_img, screenshot_file, downscale_for_storage=True)
+        # Fallback if no window records exist (e.g. system background with 0 app windows)
+        thumb_w, thumb_h = img.width, img.height
+        if not primary_screenshot_path:
+            filename = f"{ts_slug}_{hash_str[:8]}.jpg"
+            screenshot_file = self.screenshots_dir / filename
+            saved_path, thumb_w, thumb_h = self.capturer.save_image(img, screenshot_file, downscale_for_storage=True)
+            primary_screenshot_path = saved_path
 
         is_redacted_flag = 1 if (total_redactions > 0 or bool(blocked_windows)) else 0
 
@@ -473,7 +483,7 @@ class CaptureEngine:
             window_title=sanitized_title,
             url=sanitized_url,
             ocr_text=aggregated_ocr,
-            screenshot_path=saved_path,
+            screenshot_path=primary_screenshot_path,
             phash=hash_str,
             width=img.width,
             height=img.height,
@@ -516,8 +526,8 @@ class CaptureEngine:
             w_rec.capture_id = record_id
         self.storage.save_windows(saved_window_records)
 
-        # Prune old crops to enforce storage limit
-        self._prune_crops()
+        # Prune old screenshots to enforce storage limit
+        self._prune_screenshots()
 
         logger.info(
             "📸 CAPTURE #%d: Windows=%d | Fore='%s' (%.30s) | OCR=%d chars (%.1fms)",
