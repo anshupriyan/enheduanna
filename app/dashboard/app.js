@@ -137,43 +137,50 @@
         }
       }
 
-      if (Array.isArray(parsed)) {
-        for (const item of parsed) {
-          if (!item || typeof item !== "object") continue;
-          records.push({
-            captureId: item.id || item.capture_id || args?.capture_id,
-            appName: item.app_name || item.app || "Desktop",
-            windowTitle: item.window_title || item.title || "",
-            url: item.url || "",
-            timestamp: item.timestamp || "",
-            snippet: item.snippet || item.ocr_snippet || "",
-            ocrText: item.ocr_text || item.text || item.snippet || item.ocr_snippet || "",
-          });
-        }
-      } else if (parsed && typeof parsed === "object") {
+      function processItem(item) {
+        if (!item || typeof item !== "object") return;
+        const appName = item.app_name || item.app || (item.main_apps ? `Apps: ${item.main_apps}` : "Desktop");
+        const windowTitle = item.window_title || item.title || item.purpose || "Activity Memory";
+        const snippet = item.snippet || item.ocr_snippet || (item.summary ? item.summary.substring(0, 140) : "") || (item.summary_keywords ? `Keywords: ${item.summary_keywords}` : "");
+        const rawOcr = item.ocr_text || item.text || item.summary || item.snippet || item.ocr_snippet || "";
+        const formattedOcr = rawOcr && rawOcr.trim()
+          ? rawOcr
+          : `[Media/Canvas capture — Video playback or graphical app frame with no machine-readable text]\nWindow: ${windowTitle}\nApp: ${appName}${item.url ? `\nURL: ${item.url}` : ""}`;
+
         records.push({
-          captureId: parsed.id || parsed.capture_id || args?.capture_id,
-          appName: parsed.app_name || parsed.app || "Desktop",
-          windowTitle: parsed.window_title || parsed.title || "",
-          url: parsed.url || "",
-          timestamp: parsed.timestamp || "",
-          snippet: parsed.snippet || parsed.ocr_snippet || "",
-          ocrText: parsed.ocr_text || parsed.text || parsed.snippet || "",
+          captureId: item.id || item.capture_id || args?.capture_id,
+          appName,
+          windowTitle,
+          url: item.url || "",
+          timestamp: item.timestamp || item.start_time || "",
+          snippet: snippet || (rawOcr ? rawOcr.substring(0, 110) : `[Media frame: ${windowTitle}]`),
+          ocrText: formattedOcr,
         });
-        if (Array.isArray(parsed.windows)) {
-          for (const w of parsed.windows) {
+
+        if (Array.isArray(item.windows)) {
+          for (const w of item.windows) {
+            const wApp = w.app_name || w.app || appName;
+            const wTitle = w.title || windowTitle;
+            const wSnippet = w.snippet || w.ocr_snippet || "";
+            const wRaw = w.ocr_text || w.snippet || "";
             records.push({
-              captureId: parsed.id,
+              captureId: item.id || item.capture_id || args?.capture_id,
               windowId: w.window_id || w.id,
-              appName: w.app_name || w.app,
-              windowTitle: w.title,
-              url: w.url,
-              timestamp: parsed.timestamp,
-              snippet: w.snippet || w.ocr_snippet,
-              ocrText: w.ocr_text || w.snippet || "",
+              appName: wApp,
+              windowTitle: wTitle,
+              url: w.url || item.url || "",
+              timestamp: item.timestamp || item.start_time || "",
+              snippet: wSnippet || (wRaw ? wRaw.substring(0, 110) : `[Media frame: ${wTitle}]`),
+              ocrText: wRaw && wRaw.trim() ? wRaw : `[Media frame in ${wTitle}]`,
             });
           }
         }
+      }
+
+      if (Array.isArray(parsed)) {
+        for (const it of parsed) processItem(it);
+      } else if (parsed && typeof parsed === "object") {
+        processItem(parsed);
       }
     } catch (err) {
       console.debug("Could not parse OCR JSON for references:", err);
@@ -668,7 +675,7 @@
         }
       } else if (msg.role === "tool") {
         appendInlineToolResult(msg.tool_call_id, msg.name, msg.content);
-        if (["search_desktop_memory", "get_recent_memory", "get_capture_details", "get_capture_windows"].includes(msg.name)) {
+        if (["search_desktop_memory", "get_recent_memory", "get_capture_details", "get_capture_windows", "get_session_summaries", "get_activity_sessions"].includes(msg.name)) {
           const records = extractOcrRecords(msg.name, msg.content, {});
           for (const rec of records) {
             const key = `${rec.captureId || rec.id}_${rec.windowTitle || ""}_${rec.appName || ""}`;
@@ -1181,7 +1188,7 @@
                 });
               }
 
-              if (["search_desktop_memory", "get_recent_memory", "get_capture_details", "get_capture_windows"].includes(data.name)) {
+              if (["search_desktop_memory", "get_recent_memory", "get_capture_details", "get_capture_windows", "get_session_summaries", "get_activity_sessions"].includes(data.name)) {
                 const records = extractOcrRecords(data.name, data.resultContent || data.resultPreview, data.args);
                 for (const rec of records) {
                   const key = `${rec.captureId || rec.id}_${rec.windowTitle || ""}_${rec.appName || ""}`;

@@ -1783,16 +1783,20 @@ body {
 .ocr-btn-action {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-  padding: 2px 7px;
+  border-radius: 4px;
+  padding: 3px 8px;
   color: #cbd5e1;
   cursor: pointer;
-  font-size: 9.5px;
+  font-size: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   transition: all 0.15s ease;
 }
 
 .ocr-btn-action:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
 
