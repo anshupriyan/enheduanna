@@ -60,7 +60,7 @@ def test_title_and_workspace_path_resolution():
     assert file_path_sub.lower().endswith("readme.md")
 
     # 5. Direct absolute path in title (e.g. Notepad / Notepad++)
-    main_py_abs = str(Path("main.py").resolve())
+    main_py_abs = str((Path(__file__).resolve().parent.parent / "main.py").resolve())
     file_path_np, _ = extractor.resolve_file_path(
         hwnd=0,
         pid=0,
