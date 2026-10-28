@@ -14,6 +14,7 @@ build/
 .pytest_cache/
 
 # Local databases & screenshots
+data/
 memvison/data/*.db
 memvison/data/*.db-wal
 memvison/data/*.db-shm
