@@ -19,11 +19,28 @@
         <span class="brand-subtitle">Integration Core</span>
       </div>
 
-      <!-- Live Connection Pills -->
+      <!-- Live Connection Pills & Interactive Selectors -->
       <div class="status-indicators">
-        <div id="model-pill" class="pill pill-model" title="Active Model">
+        <!-- Quick Model Selector -->
+        <div id="model-pill" class="pill pill-model pill-dropdown" title="Select Active Model">
           <span class="dot"></span>
-          <span id="model-name-text">muse-spark-1.3</span>
+          <select id="quick-model-select" class="pill-select" title="Active Model">
+            <option value="muse-spark-1.3">muse-spark-1.3 (Spark)</option>
+            <option value="muse-wonder-1.0">muse-wonder-1.0 (Wonder)</option>
+            <option value="two-model">Spark + Wonder (2-Model)</option>
+          </select>
+        </div>
+
+        <!-- Quick Reasoning Effort Selector -->
+        <div id="reasoning-pill" class="pill pill-reasoning pill-dropdown" title="Adjust Thinking & Reasoning Effort">
+          <svg class="brain-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04z"/></svg>
+          <select id="quick-reasoning-select" class="pill-select" title="Reasoning Effort">
+            <option value="minimal">Minimal</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high" selected>High Thinking</option>
+            <option value="max">Max Thinking</option>
+          </select>
         </div>
 
         <div id="memvision-pill" class="pill pill-mcp" title="Desktop Screen Memory">
@@ -147,8 +164,30 @@
         </div>
 
         <div class="form-group">
-          <label for="setting-model-name">Model Name</label>
-          <input type="text" id="setting-model-name" class="form-input" placeholder="muse-spark-1.3, muse-wonder-1.0, etc.">
+          <label for="setting-model-select">Active Model Selection</label>
+          <select id="setting-model-select" class="form-input">
+            <option value="muse-spark-1.3">Muse Spark 1.3 (Fast Agentic Loop & Tools)</option>
+            <option value="muse-wonder-1.0">Muse Wonder 1.0 (Deep Reasoning & Synthesis)</option>
+            <option value="two-model">Two-Model Pipeline (Spark for Tools + Wonder for Synthesis)</option>
+            <option value="custom">Custom Model Identifier...</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="custom-model-group" style="display: none;">
+          <label for="setting-model-name">Custom Model Identifier</label>
+          <input type="text" id="setting-model-name" class="form-input" placeholder="e.g. meta/muse-spark-1.3">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-reasoning-effort">Reasoning Effort (Thinking Depth)</label>
+          <select id="setting-reasoning-effort" class="form-input">
+            <option value="minimal">Minimal (Fastest / Briefest Thinking)</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium (Standard)</option>
+            <option value="high" selected>High (Deep Multi-Step Planning - Recommended)</option>
+            <option value="max">Max (Maximum Chain-of-Thought)</option>
+          </select>
+          <span class="help-text">Directs Meta Model API to spend tokens exploring reasoning steps before generating tool calls and answers.</span>
         </div>
 
         <div class="form-group">

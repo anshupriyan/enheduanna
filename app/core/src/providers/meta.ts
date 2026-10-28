@@ -50,17 +50,19 @@ export class ModelProvider {
     apiKey: string,
     callbacks: StreamCallbacks,
     customBaseUrl?: string,
-    customModelName?: string
+    customModelName?: string,
+    customReasoningEffort?: "minimal" | "low" | "medium" | "high" | "max"
   ): Promise<ModelTurnOutput> {
     const startTime = Date.now();
     const baseUrl = customBaseUrl || this.config.model.baseUrl || "https://api.meta.ai/v1";
     const model = customModelName || this.config.model.modelName || "muse-spark-1.3";
+    const reasoningEffort = customReasoningEffort || this.config.model.reasoningEffort || "high";
 
     traceBus.emitTrace({
       type: "turn_start",
       source: "meta-api",
-      title: `Model Call: ${model}`,
-      data: { model, baseUrl, messageCount: messages.length, toolCount: tools.length },
+      title: `Model Call: ${model} [reasoning: ${reasoningEffort}]`,
+      data: { model, baseUrl, reasoningEffort, messageCount: messages.length, toolCount: tools.length },
     });
 
     const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
@@ -71,11 +73,8 @@ export class ModelProvider {
       tools: tools.length > 0 ? tools : undefined,
       stream: true,
       temperature: 0.2,
+      reasoning_effort: reasoningEffort,
     };
-
-    if (this.config.model.reasoningEffort) {
-      payload.reasoning_effort = this.config.model.reasoningEffort;
-    }
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",

@@ -143,6 +143,7 @@ export class CoreServer {
             modelName?: string;
             provider?: string;
             enableTwoModelRouting?: boolean;
+            reasoningEffort?: "minimal" | "low" | "medium" | "high" | "max";
           };
         }>(req);
 
@@ -234,11 +235,17 @@ export class CoreServer {
           modelName?: string;
           baseUrl?: string;
           apiKey?: string;
+          reasoningEffort?: "minimal" | "low" | "medium" | "high" | "max";
+          enableTwoModelRouting?: boolean;
         }>(req);
 
         if (body.provider) this.config.model.provider = body.provider;
         if (body.modelName) this.config.model.modelName = body.modelName;
         if (body.baseUrl) this.config.model.baseUrl = body.baseUrl;
+        if (body.reasoningEffort) this.config.model.reasoningEffort = body.reasoningEffort;
+        if (body.enableTwoModelRouting !== undefined) {
+          this.config.model.enableTwoModelRouting = body.enableTwoModelRouting;
+        }
         if (body.apiKey) {
           if (this.config.model.provider === "omniroute") {
             process.env.OMNIROUTE_API_KEY = body.apiKey;
@@ -255,6 +262,8 @@ export class CoreServer {
             provider: this.config.model.provider,
             modelName: this.config.model.modelName,
             baseUrl: this.config.model.baseUrl,
+            reasoningEffort: this.config.model.reasoningEffort,
+            enableTwoModelRouting: this.config.model.enableTwoModelRouting,
           },
         });
 

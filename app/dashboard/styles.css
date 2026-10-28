@@ -111,6 +111,51 @@ body {
   color: var(--text-secondary);
 }
 
+.pill-dropdown {
+  padding: 2px 6px;
+  background-color: rgba(26, 32, 44, 0.85);
+  border-color: rgba(99, 102, 241, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pill-dropdown:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  background-color: rgba(30, 41, 59, 0.95);
+}
+
+.pill-select {
+  background: transparent;
+  border: none;
+  color: #e2e8f0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  padding: 1px 2px;
+}
+
+.pill-select option {
+  background: #0f172a;
+  color: #f1f5f9;
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+
+.pill-reasoning {
+  border-color: rgba(168, 85, 247, 0.3);
+  color: #d8b4fe;
+}
+
+.pill-reasoning:hover {
+  border-color: rgba(168, 85, 247, 0.6);
+}
+
+.brain-icon {
+  color: #c084fc;
+}
+
 .pill .dot {
   width: 6px;
   height: 6px;
@@ -497,6 +542,80 @@ body {
   border-radius: 4px;
   margin-bottom: 6px;
   width: fit-content;
+}
+
+/* Collapsible Thinking & Reasoning Drawer */
+.thinking-drawer {
+  margin: 6px 0 10px 0;
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  border-radius: var(--radius-sm);
+  background: rgba(168, 85, 247, 0.04);
+  overflow: hidden;
+  width: 100%;
+  max-width: 680px;
+  transition: all 0.2s ease;
+}
+
+.thinking-drawer-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #c4b5fd;
+  cursor: pointer;
+  background-color: rgba(168, 85, 247, 0.08);
+  user-select: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  list-style: none;
+}
+
+.thinking-drawer-summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-drawer-summary:hover {
+  background-color: rgba(168, 85, 247, 0.14);
+  color: #ede9fe;
+}
+
+.thinking-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.thinking-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #a855f7;
+  animation: pulse-dot 1.4s infinite;
+}
+
+.thinking-chevron {
+  transition: transform 0.2s ease;
+  color: #a78bfa;
+}
+
+.thinking-drawer[open] .thinking-chevron {
+  transform: rotate(90deg);
+}
+
+.thinking-drawer-body {
+  padding: 10px 14px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #cbd5e1;
+  background-color: rgba(10, 14, 22, 0.95);
+  border-top: 1px solid rgba(168, 85, 247, 0.15);
+  max-height: 280px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-sans);
 }
 
 /* Collapsible Evidence Drawer for Clean Answers */

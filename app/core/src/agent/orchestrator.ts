@@ -17,6 +17,7 @@ export interface TurnOptions {
   modelName?: string;
   provider?: string;
   enableTwoModelRouting?: boolean;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "max";
 }
 
 export interface StepExecutionResult {
@@ -138,7 +139,8 @@ export class Orchestrator {
         apiKey,
         streamCallbacks,
         options.baseUrl,
-        activeModel
+        activeModel,
+        options.reasoningEffort
       );
     } catch (modelErr) {
       // If synthesis model (e.g. Wonder) fails, automatically fall back to tool model (Spark)
@@ -167,7 +169,8 @@ export class Orchestrator {
           apiKey,
           streamCallbacks,
           options.baseUrl,
-          toolModel
+          toolModel,
+          options.reasoningEffort
         );
       } else {
         throw modelErr;

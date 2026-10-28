@@ -19,7 +19,8 @@
   const clearTraceBtn = document.getElementById("clear-trace-btn");
 
   // Status & Toggle Elements
-  const modelNameText = document.getElementById("model-name-text");
+  const quickModelSelect = document.getElementById("quick-model-select");
+  const quickReasoningSelect = document.getElementById("quick-reasoning-select");
   const memvisionPill = document.getElementById("memvision-pill");
   const clibridgePill = document.getElementById("clibridge-pill");
   const captureToggleBtn = document.getElementById("capture-toggle-btn");
@@ -36,7 +37,10 @@
   // Settings inputs
   const settingProvider = document.getElementById("setting-provider");
   const settingBaseUrl = document.getElementById("setting-base-url");
+  const settingModelSelect = document.getElementById("setting-model-select");
+  const customModelGroup = document.getElementById("custom-model-group");
   const settingModelName = document.getElementById("setting-model-name");
+  const settingReasoningEffort = document.getElementById("setting-reasoning-effort");
   const settingApiKey = document.getElementById("setting-api-key");
 
   // HTTP Helper
@@ -68,8 +72,19 @@
       if (!res.ok) return;
       const data = await res.json();
 
-      modelNameText.textContent = data.modelConfig.modelName;
-      activeProviderLabel.textContent = `${data.modelConfig.provider.toUpperCase()} (${data.modelConfig.modelName})`;
+      const savedModel = localStorage.getItem("enheduanna_model");
+      if (savedModel && quickModelSelect) {
+        quickModelSelect.value = savedModel;
+      } else if (quickModelSelect) {
+        quickModelSelect.value = data.modelConfig.modelName;
+      }
+
+      const savedReasoning = localStorage.getItem("enheduanna_reasoning_effort");
+      if (savedReasoning && quickReasoningSelect) {
+        quickReasoningSelect.value = savedReasoning;
+      }
+
+      activeProviderLabel.textContent = `${data.modelConfig.provider.toUpperCase()} (${quickModelSelect?.value || data.modelConfig.modelName})`;
 
       updatePill(memvisionPill, data.mcp.servers.memvision?.connected);
       updatePill(clibridgePill, data.mcp.servers["cli-bridge"]?.connected);
@@ -302,12 +317,22 @@
         if (!currentTurnContent) {
           currentTurnContent = createAssistantRow();
         }
-        if (msg.content && msg.content.trim()) {
-          const bubble = document.createElement("div");
-          bubble.className = "message-bubble";
-          bubble.innerHTML = renderMarkdown(msg.content);
-          currentTurnContent.appendChild(bubble);
+
+        if (msg.reasoning_content && msg.reasoning_content.trim()) {
+          const thinkEl = document.createElement("details");
+          thinkEl.className = "thinking-drawer";
+          thinkEl.innerHTML = `
+            <summary class="thinking-drawer-summary">
+              <div class="thinking-left">
+                <span class="thinking-label">Thinking</span>
+              </div>
+              <svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </summary>
+            <div class="thinking-drawer-body">${escapeHtml(msg.reasoning_content)}</div>
+          `;
+          currentTurnContent.appendChild(thinkEl);
         }
+
         if (msg.tool_calls && msg.tool_calls.length > 0) {
           const groupCard = document.createElement("div");
           groupCard.className = "tool-group-card";
@@ -316,6 +341,12 @@
             groupCard.appendChild(chip);
           }
           currentTurnContent.appendChild(groupCard);
+        } else if (msg.content && msg.content.trim()) {
+          const bubble = document.createElement("div");
+          bubble.className = "message-bubble";
+          bubble.innerHTML = renderMarkdown(msg.content);
+          currentTurnContent.appendChild(bubble);
+          collapseEvidence(currentTurnContent);
         }
       } else if (msg.role === "tool") {
         appendInlineToolResult(msg.tool_call_id, msg.name, msg.content);
@@ -598,7 +629,60 @@
     let activeBubbleText = "";
     let currentToolGroupEl = null;
 
+    let thinkingStartTime = null;
+    let thinkingInterval = null;
+    let currentThinkingDrawer = null;
+    let accumulatedReasoning = "";
+
+    function getOrCreateThinkingDrawer() {
+      if (!currentThinkingDrawer) {
+        currentThinkingDrawer = document.createElement("details");
+        currentThinkingDrawer.className = "thinking-drawer";
+        currentThinkingDrawer.open = true;
+        currentThinkingDrawer.innerHTML = `
+          <summary class="thinking-drawer-summary">
+            <div class="thinking-left">
+              <span class="thinking-pulse-dot"></span>
+              <span class="thinking-label">Thinking (<span class="thinking-timer">0s</span>)</span>
+            </div>
+            <svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </summary>
+          <div class="thinking-drawer-body"></div>
+        `;
+        turnContent.appendChild(currentThinkingDrawer);
+        thinkingStartTime = Date.now();
+        thinkingInterval = setInterval(() => {
+          const elapsed = Math.round((Date.now() - thinkingStartTime) / 1000);
+          const timerEl = currentThinkingDrawer?.querySelector(".thinking-timer");
+          if (timerEl) timerEl.textContent = `${elapsed}s`;
+        }, 1000);
+      }
+      return currentThinkingDrawer;
+    }
+
+    function finalizeThinking() {
+      if (thinkingInterval) {
+        clearInterval(thinkingInterval);
+        thinkingInterval = null;
+      }
+      if (currentThinkingDrawer) {
+        const elapsed = Math.max(1, Math.round((Date.now() - (thinkingStartTime || Date.now())) / 1000));
+        const label = currentThinkingDrawer.querySelector(".thinking-label");
+        const dot = currentThinkingDrawer.querySelector(".thinking-pulse-dot");
+        if (dot) dot.style.display = "none";
+        if (label) label.textContent = `Thinking for ${elapsed}s`;
+        currentThinkingDrawer.open = false;
+      }
+    }
+
     try {
+      const selectedModelSetting = quickModelSelect?.value || localStorage.getItem("enheduanna_model") || "muse-spark-1.3";
+      const isTwoModel = selectedModelSetting === "two-model";
+      const modelName = isTwoModel ? "muse-spark-1.3" : selectedModelSetting;
+      const reasoningEffort = quickReasoningSelect?.value || localStorage.getItem("enheduanna_reasoning_effort") || "high";
+      const apiKey = localStorage.getItem("enheduanna_api_key") || undefined;
+      const baseUrl = localStorage.getItem("enheduanna_base_url") || undefined;
+
       const response = await fetch("/chat", {
         method: "POST",
         headers: {
@@ -607,6 +691,13 @@
         body: JSON.stringify({
           sessionId: activeSessionId,
           message: prompt,
+          options: {
+            modelName,
+            reasoningEffort,
+            enableTwoModelRouting: isTwoModel,
+            apiKey,
+            baseUrl,
+          },
         }),
       });
 
@@ -658,7 +749,22 @@
           try {
             const data = JSON.parse(dataStr);
 
-            if (eventType === "step_start") {
+            if (eventType === "reasoning") {
+              const drawer = getOrCreateThinkingDrawer();
+              const body = drawer.querySelector(".thinking-drawer-body");
+              accumulatedReasoning += data.text;
+              body.textContent = accumulatedReasoning;
+              const elapsed = Math.round((Date.now() - (thinkingStartTime || Date.now())) / 1000);
+              progressIndicator.setText(`Thinking & Reasoning (${elapsed}s)...`);
+              messagesStream.scrollTop = messagesStream.scrollHeight;
+            } else if (eventType === "step_narration") {
+              if (currentThinkingDrawer) {
+                const body = currentThinkingDrawer.querySelector(".thinking-drawer-body");
+                if (body && data.text) {
+                  body.textContent += `\n[Agent Plan]: ${data.text}\n`;
+                }
+              }
+            } else if (eventType === "step_start") {
               let stepBadge = turnContent.querySelector(".step-indicator-badge");
               if (!stepBadge) {
                 stepBadge = document.createElement("div");
@@ -675,6 +781,7 @@
                   : `Step ${data.step} of ${data.maxSteps}: Running reasoning...`
               );
             } else if (eventType === "tool_group_start") {
+              finalizeThinking();
               // End text bubble; create group card for parallel tools
               activeTextBubble = null;
               activeBubbleText = "";
@@ -772,6 +879,7 @@
               progressIndicator.setText(`Synthesizing final answer from available evidence...`);
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "delta") {
+              finalizeThinking();
               // Final answer started streaming: remove the progress indicator and collapse intermediate tool clutter
               progressIndicator.remove();
 
@@ -786,6 +894,7 @@
               activeTextBubble.innerHTML = renderMarkdown(activeBubbleText);
               messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "error") {
+              finalizeThinking();
               progressIndicator.remove();
               const errEl = document.createElement("div");
               errEl.className = "message-bubble";
@@ -793,6 +902,7 @@
               errEl.textContent = `[Error: ${data.error}]`;
               turnContent.appendChild(errEl);
             } else if (eventType === "done") {
+              finalizeThinking();
               progressIndicator.remove();
               collapseEvidence(turnContent);
               await loadSessions();
@@ -841,6 +951,37 @@
     });
   });
 
+  // Quick Selectors in Header
+  if (quickModelSelect) {
+    quickModelSelect.addEventListener("change", () => {
+      localStorage.setItem("enheduanna_model", quickModelSelect.value);
+      if (settingModelSelect) {
+        if (["muse-spark-1.3", "muse-wonder-1.0", "two-model"].includes(quickModelSelect.value)) {
+          settingModelSelect.value = quickModelSelect.value;
+          if (customModelGroup) customModelGroup.style.display = "none";
+        }
+      }
+      if (activeProviderLabel) {
+        activeProviderLabel.textContent = `META (${quickModelSelect.value})`;
+      }
+    });
+  }
+
+  if (quickReasoningSelect) {
+    quickReasoningSelect.addEventListener("change", () => {
+      localStorage.setItem("enheduanna_reasoning_effort", quickReasoningSelect.value);
+      if (settingReasoningEffort) settingReasoningEffort.value = quickReasoningSelect.value;
+    });
+  }
+
+  if (settingModelSelect) {
+    settingModelSelect.addEventListener("change", () => {
+      if (customModelGroup) {
+        customModelGroup.style.display = settingModelSelect.value === "custom" ? "block" : "none";
+      }
+    });
+  }
+
   // Settings Modal
   settingsBtn.addEventListener("click", async () => {
     settingsModal.classList.remove("hidden");
@@ -850,8 +991,20 @@
       if (res.ok) {
         const cfg = await res.json();
         settingProvider.value = cfg.provider || "meta";
-        settingBaseUrl.value = cfg.baseUrl || "";
-        settingModelName.value = cfg.modelName || "";
+        settingBaseUrl.value = localStorage.getItem("enheduanna_base_url") || cfg.baseUrl || "";
+
+        const currentModel = localStorage.getItem("enheduanna_model") || cfg.modelName || "muse-spark-1.3";
+        if (["muse-spark-1.3", "muse-wonder-1.0", "two-model"].includes(currentModel)) {
+          settingModelSelect.value = currentModel;
+          if (customModelGroup) customModelGroup.style.display = "none";
+        } else {
+          settingModelSelect.value = "custom";
+          settingModelName.value = currentModel;
+          if (customModelGroup) customModelGroup.style.display = "block";
+        }
+
+        const currentReasoning = localStorage.getItem("enheduanna_reasoning_effort") || cfg.reasoningEffort || "high";
+        if (settingReasoningEffort) settingReasoningEffort.value = currentReasoning;
       }
     } catch {}
   });
@@ -861,14 +1014,37 @@
   });
 
   saveSettingsBtn.addEventListener("click", async () => {
+    let chosenModel = settingModelSelect ? settingModelSelect.value : "muse-spark-1.3";
+    if (chosenModel === "custom") {
+      chosenModel = settingModelName.value.trim() || "muse-spark-1.3";
+    }
+
+    const chosenReasoning = settingReasoningEffort ? settingReasoningEffort.value : "high";
+    localStorage.setItem("enheduanna_model", chosenModel);
+    localStorage.setItem("enheduanna_reasoning_effort", chosenReasoning);
+
+    if (quickModelSelect) {
+      if (["muse-spark-1.3", "muse-wonder-1.0", "two-model"].includes(chosenModel)) {
+        quickModelSelect.value = chosenModel;
+      }
+    }
+    if (quickReasoningSelect) quickReasoningSelect.value = chosenReasoning;
+
     const payload = {
       provider: settingProvider.value,
       baseUrl: settingBaseUrl.value.trim(),
-      modelName: settingModelName.value.trim(),
+      modelName: chosenModel === "two-model" ? "muse-spark-1.3" : chosenModel,
+      reasoningEffort: chosenReasoning,
+      enableTwoModelRouting: chosenModel === "two-model",
     };
+
+    if (settingBaseUrl.value.trim()) {
+      localStorage.setItem("enheduanna_base_url", settingBaseUrl.value.trim());
+    }
 
     if (settingApiKey.value.trim()) {
       payload.apiKey = settingApiKey.value.trim();
+      localStorage.setItem("enheduanna_api_key", settingApiKey.value.trim());
     }
 
     try {
