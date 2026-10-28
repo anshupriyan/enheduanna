@@ -327,7 +327,7 @@
 
   function createToolChip(id, name, argsStr) {
     const chip = document.createElement("div");
-    chip.className = "tool-chip";
+    chip.className = "tool-chip"; // collapsed by default!
     chip.id = `tool-chip-${id}`;
 
     let parsedArgs = argsStr;
@@ -340,19 +340,26 @@
     } catch {}
 
     chip.innerHTML = `
-      <div class="tool-chip-header">
+      <div class="tool-chip-header" title="Click to view tool parameters and raw output">
         <span class="tool-chip-name">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
           ${escapeHtml(name)}
         </span>
-        <span class="tool-chip-status" id="chip-status-${id}">Executing...</span>
+        <div class="tool-chip-right">
+          <span class="tool-chip-status" id="chip-status-${id}">Executing...</span>
+          <svg class="tool-chip-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
       </div>
-      <div class="tool-chip-body" id="chip-body-${id}">Arguments:\n${escapeHtml(parsedArgs)}</div>
+      <div class="tool-chip-body" id="chip-body-${id}">
+        <div class="tool-section-title">Arguments</div>
+        <pre class="tool-json-box">${escapeHtml(parsedArgs)}</pre>
+        <div class="tool-section-title" id="result-title-${id}" style="display:none;">Result</div>
+        <pre class="tool-json-box" id="result-box-${id}" style="display:none;"></pre>
+      </div>
     `;
 
     chip.querySelector(".tool-chip-header").addEventListener("click", () => {
-      const body = chip.querySelector(".tool-chip-body");
-      body.style.display = body.style.display === "none" ? "block" : "none";
+      chip.classList.toggle("expanded");
     });
 
     return chip;
@@ -360,14 +367,26 @@
 
   function appendInlineToolResult(callId, name, resultText) {
     const statusEl = document.getElementById(`chip-status-${callId}`);
-    const bodyEl = document.getElementById(`chip-body-${callId}`);
+    const resultTitleEl = document.getElementById(`result-title-${callId}`);
+    const resultBoxEl = document.getElementById(`result-box-${callId}`);
 
     if (statusEl) {
       statusEl.textContent = "Done";
-      statusEl.style.color = "var(--accent-green)";
+      statusEl.className = "tool-chip-status done";
     }
-    if (bodyEl) {
-      bodyEl.textContent += `\n\nResult:\n${resultText}`;
+
+    if (resultTitleEl && resultBoxEl) {
+      resultTitleEl.style.display = "block";
+      resultBoxEl.style.display = "block";
+
+      let prettyResult = resultText;
+      try {
+        if (typeof resultText === "string" && (resultText.trim().startsWith("{") || resultText.trim().startsWith("["))) {
+          prettyResult = JSON.stringify(JSON.parse(resultText), null, 2);
+        }
+      } catch {}
+
+      resultBoxEl.textContent = prettyResult;
     }
   }
 

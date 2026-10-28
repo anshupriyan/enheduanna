@@ -411,24 +411,38 @@ body {
 
 /* Tool Call Chip in Chat */
 .tool-chip {
-  margin: 6px 0;
+  margin: 4px 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background-color: var(--bg-secondary);
   overflow: hidden;
   max-width: 100%;
+  width: fit-content;
+  min-width: 260px;
+  transition: all 0.15s ease;
+}
+
+.tool-chip.expanded {
+  width: 100%;
+  border-color: var(--border-strong);
 }
 
 .tool-chip-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  gap: 16px;
+  padding: 5px 10px;
   font-family: var(--font-mono);
   font-size: 11px;
   cursor: pointer;
   background-color: var(--bg-surface);
   user-select: none;
+  transition: background-color 0.15s;
+}
+
+.tool-chip-header:hover {
+  background-color: var(--bg-surface-hover);
 }
 
 .tool-chip-name {
@@ -436,23 +450,82 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  font-weight: 500;
+}
+
+.tool-chip-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .tool-chip-status {
   font-size: 10px;
   color: var(--text-muted);
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 500;
 }
 
+.tool-chip-status.done {
+  color: var(--accent-green);
+  background-color: var(--accent-green-dim);
+}
+
+.tool-chip-status.error {
+  color: var(--accent-red);
+  background-color: var(--accent-red-dim);
+}
+
+.tool-chip-chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.tool-chip.expanded .tool-chip-chevron {
+  transform: rotate(180deg);
+}
+
+/* Hidden by default! */
 .tool-chip-body {
-  padding: 8px 10px;
+  display: none;
+  padding: 10px 12px;
   font-family: var(--font-mono);
   font-size: 11px;
-  background-color: #0b0f16;
+  background-color: #080c12;
   border-top: 1px solid var(--border-subtle);
-  white-space: pre-wrap;
-  max-height: 250px;
+  max-height: 280px;
   overflow-y: auto;
   color: var(--text-secondary);
+}
+
+.tool-chip.expanded .tool-chip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.tool-json-box {
+  background-color: #0e131d;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #cad3e2;
+  line-height: 1.45;
+  font-size: 11px;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 /* Chat Footer Input */
