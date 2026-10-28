@@ -4,7 +4,18 @@ import type { ServerResponse } from "node:http";
 export interface TraceEvent {
   id: string;
   timestamp: string;
-  type: "turn_start" | "turn_end" | "model_request" | "model_chunk" | "tool_call" | "tool_result" | "capture_toggle" | "error" | "system";
+  type:
+    | "turn_start"
+    | "turn_end"
+    | "model_request"
+    | "model_chunk"
+    | "tool_call"
+    | "tool_result"
+    | "tool_group"
+    | "capture_toggle"
+    | "error"
+    | "warning"
+    | "system";
   source: "orchestrator" | "meta-api" | "mcp-memvision" | "mcp-cli-bridge" | "capture" | "system";
   title: string;
   data: Record<string, unknown>;

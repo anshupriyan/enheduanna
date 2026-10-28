@@ -148,12 +148,22 @@
     const time = evt.timestamp ? evt.timestamp.substring(11, 19) : "";
     const latency = evt.latencyMs ? `${evt.latencyMs}ms` : "";
 
+    let detailsHtml = "";
+    if (evt.type === "tool_group" && evt.data?.tools) {
+      detailsHtml = `
+        <div class="trace-group-breakdown" style="margin-top:6px; font-size:10px; font-family:var(--font-mono); color:var(--text-secondary); display:flex; flex-direction:column; gap:2px;">
+          ${evt.data.tools.map((t) => `<div>• ${escapeHtml(t.name)}: ${t.durationMs}ms ${t.isRepeated ? "(cached)" : ""} ${t.isError ? "(error)" : ""}</div>`).join("")}
+        </div>
+      `;
+    }
+
     card.innerHTML = `
       <div class="trace-top">
         <span class="trace-badge">${evt.source || "system"}</span>
         <span>${time} ${latency ? `• ${latency}` : ""}</span>
       </div>
       <div class="trace-summary">${escapeHtml(evt.title)}</div>
+      ${detailsHtml}
     `;
 
     traceEvents.appendChild(card);
@@ -226,35 +236,43 @@
     } catch {}
   }
 
+  function renderMarkdown(mdText) {
+    if (!mdText) return "";
+    try {
+      if (typeof marked !== "undefined" && typeof DOMPurify !== "undefined") {
+        return DOMPurify.sanitize(marked.parse(mdText));
+      }
+    } catch (e) {
+      console.warn("Markdown render error:", e);
+    }
+    return escapeHtml(mdText);
+  }
+
   function formatToolResult(raw) {
     if (raw === null || raw === undefined) return "No output";
     let val = raw;
-    if (typeof val === "string") {
-      const trimmed = val.trim();
-      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-        try {
-          val = JSON.parse(trimmed);
-        } catch {}
-      }
-    }
 
-    // Handle MCP text content arrays e.g. [{ type: "text", text: "..." }]
-    if (Array.isArray(val) && val.length > 0 && val[0]?.type === "text" && typeof val[0].text === "string") {
-      try {
-        val = JSON.parse(val[0].text);
-      } catch {
-        val = val[0].text;
-      }
-    }
-
-    // Handle nested stringified JSON
-    if (typeof val === "string") {
-      const trimmed = val.trim();
-      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    // Unpack nested JSON strings up to depth 3
+    for (let depth = 0; depth < 3; depth++) {
+      if (Array.isArray(val) && val.length > 0 && val[0]?.type === "text" && typeof val[0].text === "string") {
         try {
-          val = JSON.parse(trimmed);
-        } catch {}
+          val = JSON.parse(val[0].text);
+          continue;
+        } catch {
+          val = val[0].text;
+          break;
+        }
       }
+      if (typeof val === "string") {
+        const trimmed = val.trim();
+        if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+          try {
+            val = JSON.parse(trimmed);
+            continue;
+          } catch {}
+        }
+      }
+      break;
     }
 
     if (typeof val === "object" && val !== null) {
@@ -287,14 +305,17 @@
         if (msg.content && msg.content.trim()) {
           const bubble = document.createElement("div");
           bubble.className = "message-bubble";
-          bubble.textContent = msg.content;
+          bubble.innerHTML = renderMarkdown(msg.content);
           currentTurnContent.appendChild(bubble);
         }
         if (msg.tool_calls && msg.tool_calls.length > 0) {
+          const groupCard = document.createElement("div");
+          groupCard.className = "tool-group-card";
           for (const tc of msg.tool_calls) {
             const chip = createToolChip(tc.id, tc.function.name, tc.function.arguments);
-            currentTurnContent.appendChild(chip);
+            groupCard.appendChild(chip);
           }
+          currentTurnContent.appendChild(groupCard);
         }
       } else if (msg.role === "tool") {
         appendInlineToolResult(msg.tool_call_id, msg.name, msg.content);
@@ -369,14 +390,23 @@
     return chip;
   }
 
-  function appendInlineToolResult(callId, name, resultText) {
+  function appendInlineToolResult(callId, name, resultText, meta = {}) {
     const statusEl = document.getElementById(`chip-status-${callId}`);
     const resultTitleEl = document.getElementById(`result-title-${callId}`);
     const resultBoxEl = document.getElementById(`result-box-${callId}`);
 
     if (statusEl) {
-      statusEl.textContent = "Done";
-      statusEl.className = "tool-chip-status done";
+      if (meta.isError) {
+        statusEl.textContent = "Error";
+        statusEl.className = "tool-chip-status error";
+      } else if (meta.isRepeated) {
+        statusEl.textContent = "Cached (Repeat Blocked)";
+        statusEl.className = "tool-chip-status";
+      } else {
+        const timeStr = meta.durationMs ? `${meta.durationMs}ms • ` : "";
+        statusEl.textContent = `${timeStr}Done`;
+        statusEl.className = "tool-chip-status done";
+      }
     }
 
     if (resultTitleEl && resultBoxEl) {
@@ -403,6 +433,7 @@
     const turnContent = createAssistantRow();
     let activeTextBubble = null;
     let activeBubbleText = "";
+    let currentToolGroupEl = null;
 
     try {
       const response = await fetch("/chat", {
@@ -459,7 +490,69 @@
           try {
             const data = JSON.parse(dataStr);
 
-            if (eventType === "delta") {
+            if (eventType === "step_start") {
+              let stepBadge = turnContent.querySelector(".step-indicator-badge");
+              if (!stepBadge) {
+                stepBadge = document.createElement("div");
+                stepBadge.className = "step-indicator-badge";
+                turnContent.insertBefore(stepBadge, turnContent.firstChild);
+              }
+              stepBadge.textContent = data.isSynthesis
+                ? `Synthesizing final answer... (Step ${data.step}/${data.maxSteps})`
+                : `Step ${data.step} of ${data.maxSteps}`;
+            } else if (eventType === "tool_group_start") {
+              // End text bubble; create group card for parallel tools
+              activeTextBubble = null;
+              activeBubbleText = "";
+
+              currentToolGroupEl = document.createElement("div");
+              currentToolGroupEl.className = "tool-group-card";
+              currentToolGroupEl.id = `tool-group-step-${data.step}`;
+
+              const count = data.count || 1;
+              const groupHeader = document.createElement("div");
+              groupHeader.className = "tool-group-header";
+              groupHeader.id = `tool-group-header-step-${data.step}`;
+              groupHeader.innerHTML = `
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>${count > 1 ? `${count} parallel tool calls running...` : `Running tool call...`}</span>
+              `;
+              currentToolGroupEl.appendChild(groupHeader);
+              turnContent.appendChild(currentToolGroupEl);
+              messagesStream.scrollTop = messagesStream.scrollHeight;
+            } else if (eventType === "tool_call_start") {
+              const chip = createToolChip(data.id, data.name, data.args);
+              if (currentToolGroupEl) {
+                currentToolGroupEl.appendChild(chip);
+              } else {
+                turnContent.appendChild(chip);
+              }
+              messagesStream.scrollTop = messagesStream.scrollHeight;
+            } else if (eventType === "tool_call_done") {
+              appendInlineToolResult(data.id, data.name, data.resultPreview, {
+                isError: data.isError,
+                isRepeated: data.isRepeated,
+                durationMs: data.durationMs,
+              });
+            } else if (eventType === "tool_group_done") {
+              const headerEl = document.getElementById(`tool-group-header-step-${data.step}`);
+              if (headerEl) {
+                const count = data.callCount || 1;
+                headerEl.innerHTML = `
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span>${count > 1 ? `${count} parallel tool calls (${data.wallClockMs}ms wall-clock)` : `Tool call completed (${data.wallClockMs}ms)`}</span>
+                `;
+              }
+            } else if (eventType === "step_cap_reached") {
+              const capEl = document.createElement("div");
+              capEl.className = "step-cap-warning";
+              capEl.innerHTML = `
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span>Step limit reached (${data.maxSteps}/${data.maxSteps}) — synthesizing final answer</span>
+              `;
+              turnContent.appendChild(capEl);
+              messagesStream.scrollTop = messagesStream.scrollHeight;
+            } else if (eventType === "delta") {
               if (!activeTextBubble) {
                 activeTextBubble = document.createElement("div");
                 activeTextBubble.className = "message-bubble";
@@ -467,17 +560,8 @@
                 activeBubbleText = "";
               }
               activeBubbleText += data.text;
-              activeTextBubble.textContent = activeBubbleText;
+              activeTextBubble.innerHTML = renderMarkdown(activeBubbleText);
               messagesStream.scrollTop = messagesStream.scrollHeight;
-            } else if (eventType === "tool_call_start") {
-              // End current text segment; next text will appear chronologically below this tool
-              activeTextBubble = null;
-              activeBubbleText = "";
-              const chip = createToolChip(data.id, data.name, data.args);
-              turnContent.appendChild(chip);
-              messagesStream.scrollTop = messagesStream.scrollHeight;
-            } else if (eventType === "tool_call_done") {
-              appendInlineToolResult(data.id, data.name, data.resultPreview);
             } else if (eventType === "error") {
               const errEl = document.createElement("div");
               errEl.className = "message-bubble";

@@ -14,16 +14,19 @@ export interface ChatMessage {
       arguments: string;
     };
   }>;
+  reasoning_content?: string;
 }
 
 export interface StreamCallbacks {
   onDelta?: (text: string) => void;
+  onReasoningDelta?: (text: string) => void;
   onToolCall?: (toolCall: { id: string; name: string; arguments: Record<string, unknown> }) => void;
   onError?: (err: Error) => void;
 }
 
 export interface ModelTurnOutput {
   reply: string;
+  reasoning?: string;
   toolCalls: Array<{
     id: string;
     name: string;
@@ -57,13 +60,17 @@ export class ModelProvider {
 
     const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       model,
       messages,
       tools: tools.length > 0 ? tools : undefined,
       stream: true,
       temperature: 0.2,
     };
+
+    if (this.config.model.reasoningEffort) {
+      payload.reasoning_effort = this.config.model.reasoningEffort;
+    }
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -97,6 +104,7 @@ export class ModelProvider {
     }
 
     let fullReply = "";
+    let fullReasoning = "";
     const activeToolCalls: Map<number, { id: string; name: string; argumentsStr: string }> = new Map();
     let usage: ModelTurnOutput["usage"] = undefined;
 
@@ -131,6 +139,14 @@ export class ModelProvider {
               if (!choice) continue;
 
               const delta = choice.delta;
+
+              // Check for reasoning tokens (e.g. reasoning_content, thought, reasoning)
+              const reasoningChunk = delta?.reasoning_content ?? delta?.reasoning ?? delta?.thought;
+              if (reasoningChunk) {
+                fullReasoning += reasoningChunk;
+                callbacks.onReasoningDelta?.(reasoningChunk);
+              }
+
               if (delta?.content) {
                 fullReply += delta.content;
                 callbacks.onDelta?.(delta.content);
@@ -191,6 +207,7 @@ export class ModelProvider {
         model,
         durationMs,
         replyLength: fullReply.length,
+        reasoningLength: fullReasoning.length,
         toolCallCount: finalToolCalls.length,
         toolCalls: finalToolCalls.map((t) => ({ name: t.name, id: t.id })),
         usage,
@@ -200,6 +217,7 @@ export class ModelProvider {
 
     return {
       reply: fullReply,
+      reasoning: fullReasoning || undefined,
       toolCalls: finalToolCalls,
       usage,
     };

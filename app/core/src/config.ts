@@ -31,6 +31,7 @@ export interface AppConfig {
   };
   limits: {
     maxSteps: number;
+    maxParallelToolCalls: number;
     maxToolResultLength: number;
   };
   mcpServers: {
@@ -51,7 +52,8 @@ const DEFAULT_CONFIG: AppConfig = {
     reasoningEffort: "medium",
   },
   limits: {
-    maxSteps: 1,
+    maxSteps: 6,
+    maxParallelToolCalls: 5,
     maxToolResultLength: 4000,
   },
   mcpServers: {
