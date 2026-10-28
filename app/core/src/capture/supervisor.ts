@@ -1,6 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
-import { getRepoRoot, resolvePythonExe } from "../config.js";
+import {
+  getRepoRoot,
+  resolvePythonExe,
+  resolveMemvisionRoot,
+  resolveMemvisionDbPath,
+  resolveMemvisionScreenshotsDir,
+} from "../config.js";
 import { traceBus } from "../trace/bus.js";
 
 class CaptureSupervisor {
@@ -26,14 +32,20 @@ class CaptureSupervisor {
       return { success: true, pid: this.process?.pid, message: "Capture loop is already running" };
     }
 
-    const repoRoot = getRepoRoot();
     const pythonExe = resolvePythonExe();
-    const memvisionDir = path.join(repoRoot, "memvison");
+    const memvisionDir = resolveMemvisionRoot();
+    const dbPath = resolveMemvisionDbPath();
+    const screenshotsDir = resolveMemvisionScreenshotsDir();
 
     try {
       this.lastError = null;
       this.process = spawn(pythonExe, ["main.py", "run", "--interval", "2.0"], {
         cwd: memvisionDir,
+        env: {
+          ...process.env,
+          MEMVISION_DB_PATH: dbPath,
+          MEMVISION_SCREENSHOTS_DIR: screenshotsDir,
+        },
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });

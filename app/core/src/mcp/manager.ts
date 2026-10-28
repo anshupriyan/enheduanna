@@ -1,7 +1,14 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import path from "node:path";
-import { getRepoRoot, resolvePythonExe, type AppConfig } from "../config.js";
+import {
+  getRepoRoot,
+  resolvePythonExe,
+  resolveMemvisionRoot,
+  resolveMemvisionDbPath,
+  resolveMemvisionScreenshotsDir,
+  type AppConfig,
+} from "../config.js";
 import { toolResultBuffer } from "./buffer.js";
 import { traceBus } from "../trace/bus.js";
 
@@ -67,15 +74,22 @@ export class McpManager {
 
     // 1. Connect to memvision
     try {
-      const memCwd = path.isAbsolute(this.config.mcpServers.memvision.cwd)
-        ? this.config.mcpServers.memvision.cwd
-        : path.join(repoRoot, this.config.mcpServers.memvision.cwd);
+      const configuredCwd = this.config.mcpServers.memvision.cwd;
+      const memCwd = configuredCwd
+        ? (path.isAbsolute(configuredCwd) ? configuredCwd : path.resolve(repoRoot, configuredCwd))
+        : resolveMemvisionRoot();
+
+      const memvisionEnv: Record<string, string> = {
+        MEMVISION_DB_PATH: resolveMemvisionDbPath(),
+        MEMVISION_SCREENSHOTS_DIR: resolveMemvisionScreenshotsDir(),
+        ...(this.config.mcpServers.memvision.env || {}),
+      };
 
       this.memTransport = new StdioClientTransport({
         command: pythonExe,
         args: this.config.mcpServers.memvision.args,
         cwd: memCwd,
-        env: this.getCleanEnv(this.config.mcpServers.memvision.env),
+        env: this.getCleanEnv(memvisionEnv),
       });
 
       this.memClient = new Client({ name: "enheduanna-core", version: "1.0.0" }, { capabilities: {} });

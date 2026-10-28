@@ -58,10 +58,13 @@ const DEFAULT_CONFIG: AppConfig = {
   },
   mcpServers: {
     memvision: {
-      command: path.join("memvison", ".venv", "Scripts", "python.exe"),
+      command: path.join("..", "memvison", ".venv", "Scripts", "python.exe"),
       args: ["main.py", "mcp"],
-      cwd: "memvison",
-      env: {},
+      cwd: path.resolve(REPO_ROOT, "..", "memvison"),
+      env: {
+        MEMVISION_DB_PATH: path.join(path.resolve(REPO_ROOT, "..", "memvison"), "data", "memvision.db"),
+        MEMVISION_SCREENSHOTS_DIR: path.join(path.resolve(REPO_ROOT, "..", "memvison"), "data", "screenshots"),
+      },
     },
     "cli-bridge": {
       command: "node",
@@ -71,6 +74,29 @@ const DEFAULT_CONFIG: AppConfig = {
     },
   },
 };
+
+export function resolveMemvisionRoot(): string {
+  const candidates = [
+    path.resolve(REPO_ROOT, "..", "memvison"),
+    path.resolve(REPO_ROOT, "memvison"),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, "data", "memvision.db")) || fs.existsSync(path.join(c, "main.py"))) {
+      return c;
+    }
+  }
+  return path.resolve(REPO_ROOT, "..", "memvison");
+}
+
+export function resolveMemvisionDbPath(): string {
+  const memRoot = resolveMemvisionRoot();
+  return path.join(memRoot, "data", "memvision.db");
+}
+
+export function resolveMemvisionScreenshotsDir(): string {
+  const memRoot = resolveMemvisionRoot();
+  return path.join(memRoot, "data", "screenshots");
+}
 
 export function loadConfig(): AppConfig {
   const configPath = path.join(REPO_ROOT, "enheduanna.config.json");
@@ -113,6 +139,7 @@ export function loadConfig(): AppConfig {
 
 export function resolvePythonExe(): string {
   const candidates = [
+    path.join(resolveMemvisionRoot(), ".venv", "Scripts", "python.exe"),
     path.join(REPO_ROOT, "memvison", ".venv", "Scripts", "python.exe"),
     path.join(REPO_ROOT, "..", "memvison", ".venv", "Scripts", "python.exe"),
     "python",

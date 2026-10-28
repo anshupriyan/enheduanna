@@ -33,12 +33,16 @@ class MCPServer:
 
     def __init__(self, db_path: Optional[str | Path] = None):
         self.config = load_config()
-        if db_path is None:
-            configured_db = Path(self.config.storage.database_path)
-            resolved_db = configured_db if configured_db.is_absolute() else _project_root / configured_db
-        else:
+        import os
+        env_db = os.environ.get("MEMVISION_DB_PATH")
+        if env_db:
+            resolved_db = Path(env_db).resolve()
+        elif db_path is not None:
             p = Path(db_path)
             resolved_db = p if p.is_absolute() else _project_root / p
+        else:
+            configured_db = Path(self.config.storage.database_path)
+            resolved_db = configured_db if configured_db.is_absolute() else _project_root / configured_db
         self.storage = MemoryStorage(resolved_db, self.config.storage.enable_fts)
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:

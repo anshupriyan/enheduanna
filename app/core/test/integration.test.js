@@ -34,16 +34,21 @@ test("Acceptance Test 3: Secret scrubber redacts OpenAI/Meta/Anthropic tokens", 
 });
 
 test("Acceptance Test 4: Tool result truncation and buffer retrieval", () => {
+  const prevMax = 4000;
   toolResultBuffer.setMaxResultLength(200);
-  const largeOutput = "X".repeat(1000);
-  const processed = toolResultBuffer.processResult("test_tool", largeOutput);
+  try {
+    const largeOutput = "X".repeat(1000);
+    const processed = toolResultBuffer.processResult("test_tool", largeOutput);
 
-  assert.strictEqual(processed.isTruncated, true, "Output should be marked as truncated");
-  assert.ok(processed.bufferId, "Buffer ID must be returned");
-  assert.ok(processed.text.includes("Truncated 800 characters"), "Text must contain truncation notice");
+    assert.strictEqual(processed.isTruncated, true, "Output should be marked as truncated");
+    assert.ok(processed.bufferId, "Buffer ID must be returned");
+    assert.ok(processed.text.includes("Truncated 800 characters"), "Text must contain truncation notice");
 
-  const full = toolResultBuffer.getFullResult(processed.bufferId);
-  assert.strictEqual(full, largeOutput, "Full content must be retrievable by bufferId");
+    const full = toolResultBuffer.getFullResult(processed.bufferId);
+    assert.strictEqual(full, largeOutput, "Full content must be retrievable by bufferId");
+  } finally {
+    toolResultBuffer.setMaxResultLength(prevMax);
+  }
 });
 
 test("Acceptance Test 5: /tools returns all registered MCP tools from both servers", async () => {
@@ -57,3 +62,27 @@ test("Acceptance Test 5: /tools returns all registered MCP tools from both serve
   assert.ok(toolNames.includes("read_file"), "Must include cli-bridge tools");
   assert.ok(toolNames.includes("get_full_result"), "Must include get_full_result tool");
 });
+
+test("Acceptance Test 6: memvision connects to original DB with 3,100+ captures", async () => {
+  const { loadConfig } = await import("../dist/config.js");
+  const { McpManager } = await import("../dist/mcp/manager.js");
+
+  const config = loadConfig();
+  const manager = new McpManager(config);
+  await manager.init();
+
+  try {
+    const rawStats = await manager.executeTool("get_memory_statistics", {});
+    assert.strictEqual(rawStats.isError, false, "get_memory_statistics must succeed");
+
+    const stats = typeof rawStats.content === "string" ? JSON.parse(rawStats.content) : rawStats.content;
+    assert.ok(stats.total_captures >= 3100, `Expected >= 3,100 captures, got ${stats.total_captures}`);
+    assert.ok(
+      stats.first_capture_timestamp.startsWith("2026-10-26"),
+      `Expected captures starting 2026-10-26, got ${stats.first_capture_timestamp}`
+    );
+  } finally {
+    await manager.close();
+  }
+});
+

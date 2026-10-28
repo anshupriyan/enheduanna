@@ -104,21 +104,26 @@ class AppConfig:
 
 
 def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
-    """Convenience helper to load AppConfig from path or default location."""
+    """Convenience helper to load AppConfig from path or default location, with environment overrides."""
+    import os
     project_root = Path(__file__).resolve().parent.parent.parent
     if config_path:
         p = Path(config_path)
         if not p.is_file() and not p.is_absolute():
             p = project_root / p
-        return AppConfig.from_json(p)
+        cfg = AppConfig.from_json(p)
+    elif Path("config/default_config.json").is_file():
+        cfg = AppConfig.from_json(Path("config/default_config.json"))
+    elif (project_root / "config" / "default_config.json").is_file():
+        cfg = AppConfig.from_json(project_root / "config" / "default_config.json")
+    else:
+        cfg = AppConfig()
 
-    default_path = Path("config/default_config.json")
-    if default_path.is_file():
-        return AppConfig.from_json(default_path)
+    # Environment variable overrides
+    if os.environ.get("MEMVISION_DB_PATH"):
+        cfg.storage.database_path = os.environ["MEMVISION_DB_PATH"]
+    if os.environ.get("MEMVISION_SCREENSHOTS_DIR"):
+        cfg.storage.screenshots_dir = os.environ["MEMVISION_SCREENSHOTS_DIR"]
 
-    project_root_default = project_root / "config" / "default_config.json"
-    if project_root_default.is_file():
-        return AppConfig.from_json(project_root_default)
-
-    return AppConfig()
+    return cfg
 
