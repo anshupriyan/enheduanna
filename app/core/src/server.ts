@@ -7,6 +7,7 @@ import { captureSupervisor } from "./capture/supervisor.js";
 import { sessionStore } from "./agent/session.js";
 import { McpManager } from "./mcp/manager.js";
 import { Orchestrator } from "./agent/orchestrator.js";
+import { approvalManager } from "./agent/approval.js";
 import { getApiKey, getRepoRoot, type AppConfig } from "./config.js";
 
 const MIME_TYPES: Record<string, string> = {
@@ -257,6 +258,27 @@ export class CoreServer {
         });
 
         this.sendJson(res, 200, { success: true });
+        return;
+      }
+
+      // GET /api/approvals
+      if (req.method === "GET" && pathname === "/api/approvals") {
+        const sessionId = url.searchParams.get("sessionId") || undefined;
+        this.sendJson(res, 200, { pending: approvalManager.getPending(sessionId) });
+        return;
+      }
+
+      // POST /api/approvals/:id
+      if (req.method === "POST" && pathname.startsWith("/api/approvals/")) {
+        const id = pathname.substring("/api/approvals/".length);
+        const body = await this.parseJsonBody<{ decision?: "allow" | "deny" }>(req);
+        const isApproved = body.decision === "allow";
+        const ok = approvalManager.resolveRequest(id, isApproved);
+        if (!ok) {
+          this.sendError(res, 404, "Approval request not found or already resolved");
+          return;
+        }
+        this.sendJson(res, 200, { success: true, id, decision: body.decision });
         return;
       }
 

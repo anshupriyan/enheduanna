@@ -416,6 +416,76 @@
     }
   }
 
+  function createApprovalCard(data) {
+    const card = document.createElement("div");
+    card.className = "approval-card";
+    card.id = `approval-${data.id}`;
+
+    const argsJson = data.args && Object.keys(data.args).length > 0
+      ? JSON.stringify(data.args, null, 2)
+      : "";
+
+    card.innerHTML = `
+      <div class="approval-header">
+        <div class="approval-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>Authorization Required</span>
+        </div>
+        <span class="approval-tool">${escapeHtml(data.toolName)}</span>
+      </div>
+      <div class="approval-title">${escapeHtml(data.title || "Authorization Request")}</div>
+      <div class="approval-desc">${escapeHtml(data.description || "")}</div>
+      ${argsJson ? `<pre class="approval-args"><code>${escapeHtml(argsJson)}</code></pre>` : ""}
+      <div class="approval-actions" id="approval-actions-${data.id}">
+        <button type="button" class="btn-approval btn-allow" data-id="${data.id}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Allow</span>
+        </button>
+        <button type="button" class="btn-approval btn-deny" data-id="${data.id}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span>Deny</span>
+        </button>
+      </div>
+    `;
+
+    const allowBtn = card.querySelector(".btn-allow");
+    const denyBtn = card.querySelector(".btn-deny");
+    const actionsEl = card.querySelector(`#approval-actions-${data.id}`);
+
+    async function submitDecision(decision) {
+      if (allowBtn) allowBtn.disabled = true;
+      if (denyBtn) denyBtn.disabled = true;
+      if (actionsEl) {
+        actionsEl.innerHTML = `<span class="approval-resolving">Submitting ${decision === "allow" ? "approval" : "denial"}...</span>`;
+      }
+
+      try {
+        const resp = await fetch(`/api/approvals/${data.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision }),
+        });
+        if (!resp.ok) {
+          const errText = await resp.text();
+          throw new Error(errText);
+        }
+      } catch (err) {
+        if (actionsEl) {
+          actionsEl.innerHTML = `<span class="approval-error">Failed: ${escapeHtml(err.message)}</span>`;
+        }
+      }
+    }
+
+    if (allowBtn) {
+      allowBtn.addEventListener("click", () => submitDecision("allow"));
+    }
+    if (denyBtn) {
+      denyBtn.addEventListener("click", () => submitDecision("deny"));
+    }
+
+    return card;
+  }
+
   function createProgressIndicator(container, initialText = "Thinking...") {
     const el = document.createElement("div");
     el.className = "turn-progress-indicator";
@@ -598,6 +668,39 @@
                 durationMs: data.durationMs,
               });
               progressIndicator.setText(`Finished ${data.name}, processing...`);
+            } else if (eventType === "approval_required") {
+              const approvalCard = createApprovalCard(data);
+              if (currentToolGroupEl) {
+                currentToolGroupEl.appendChild(approvalCard);
+              } else {
+                turnContent.appendChild(approvalCard);
+              }
+              progressIndicator.setText(`Waiting for your authorization on ${data.toolName}...`);
+              messagesStream.scrollTop = messagesStream.scrollHeight;
+            } else if (eventType === "approval_resolved") {
+              const card = document.getElementById(`approval-${data.id}`);
+              if (card) {
+                const actionsEl = card.querySelector(".approval-actions");
+                if (actionsEl) {
+                  if (data.decision === "approved") {
+                    actionsEl.innerHTML = `
+                      <div class="approval-result-status status-allowed">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>Access Granted by You</span>
+                      </div>
+                    `;
+                  } else {
+                    actionsEl.innerHTML = `
+                      <div class="approval-result-status status-denied">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        <span>Access Denied by You</span>
+                      </div>
+                    `;
+                  }
+                }
+              }
+              progressIndicator.setText(`Authorization resolved (${data.decision}). Continuing execution...`);
+              messagesStream.scrollTop = messagesStream.scrollHeight;
             } else if (eventType === "tool_group_done") {
               const headerEl = document.getElementById(`tool-group-header-step-${data.step}`);
               if (headerEl) {

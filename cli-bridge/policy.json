@@ -2,7 +2,7 @@
   "mode": "policy",
   "roots": [
     {
-      "path": "C:/meta hackathon/cli-bridge",
+      "path": "C:/meta hackathon",
       "access": "rw"
     },
     {
@@ -37,5 +37,5 @@
   },
   "unknown_command": "ask",
   "unknown_path": "ask",
-  "audit_log_path": "C:/meta hackathon/cli-bridge/.cli-bridge-audit.log"
+  "audit_log_path": "C:/meta hackathon/.cli-bridge-audit.log"
 }

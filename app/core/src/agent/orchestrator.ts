@@ -5,6 +5,7 @@ import { ModelProvider } from "../providers/meta.js";
 import { traceBus } from "../trace/bus.js";
 import { getApiKey, type AppConfig } from "../config.js";
 import { getSystemPrompt } from "../prompts/loader.js";
+import { approvalManager } from "./approval.js";
 
 export interface TurnOptions {
   maxSteps?: number;
@@ -228,6 +229,89 @@ export class Orchestrator {
           durationMs,
           isRepeated: true,
         };
+      }
+
+      // Check for human-in-the-loop authorization
+      const approvalCheck = approvalManager.needsApproval(tc.name, tc.arguments);
+      if (approvalCheck.needs) {
+        const { request: apprReq, promise: apprPromise } = approvalManager.createRequest({
+          sessionId,
+          step,
+          toolCallId: tc.id,
+          toolName: tc.name,
+          title: approvalCheck.title || "Authorization Request",
+          description: approvalCheck.description || `Enheduanna is requesting permission to execute ${tc.name}.`,
+          args: tc.arguments,
+        });
+
+        if (res) {
+          res.write(
+            `event: approval_required\ndata: ${JSON.stringify({
+              id: apprReq.id,
+              step,
+              toolCallId: tc.id,
+              toolName: tc.name,
+              title: apprReq.title,
+              description: apprReq.description,
+              args: tc.arguments,
+            })}\n\n`
+          );
+        }
+
+        traceBus.emitTrace({
+          type: "system",
+          source: "orchestrator",
+          title: `Authorization Required: ${tc.name}`,
+          data: { id: apprReq.id, toolName: tc.name, args: tc.arguments },
+        });
+
+        const userApproved = await apprPromise;
+
+        if (res) {
+          res.write(
+            `event: approval_resolved\ndata: ${JSON.stringify({
+              id: apprReq.id,
+              decision: userApproved ? "approved" : "denied",
+              toolCallId: tc.id,
+              toolName: tc.name,
+            })}\n\n`
+          );
+        }
+
+        if (!userApproved) {
+          const durationMs = Date.now() - callStart;
+          const deniedMsg = `[Permission Denied by User: The user explicitly denied authorization for "${tc.name}". Please explain to the user that permission was not granted and state what alternatives are available.]`;
+
+          if (res) {
+            res.write(
+              `event: tool_call_done\ndata: ${JSON.stringify({
+                id: tc.id,
+                name: tc.name,
+                resultPreview: deniedMsg,
+                isTruncated: false,
+                isError: true,
+                durationMs,
+                isRepeated: false,
+              })}\n\n`
+            );
+          }
+
+          return {
+            tool_call_id: tc.id,
+            name: tc.name,
+            content: deniedMsg,
+            isError: true,
+            durationMs,
+            isRepeated: false,
+          };
+        }
+
+        // If execute_command was approved, ensure Dev Mode is enabled on cli-bridge
+        if (tc.name === "execute_command") {
+          try {
+            await this.mcpManager.executeTool("toggle_dev_mode", { enable_dev_mode: true });
+          } catch {}
+        }
       }
 
       // Fresh tool execution

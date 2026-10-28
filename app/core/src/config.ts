@@ -52,7 +52,7 @@ const DEFAULT_CONFIG: AppConfig = {
     reasoningEffort: "medium",
   },
   limits: {
-    maxSteps: 6,
+    maxSteps: 8,
     maxParallelToolCalls: 5,
     maxToolResultLength: 4000,
   },
@@ -68,9 +68,11 @@ const DEFAULT_CONFIG: AppConfig = {
     },
     "cli-bridge": {
       command: "node",
-      args: ["build/index.js"],
+      args: ["build/index.js", "--policy", "policy.json"],
       cwd: "cli-bridge",
-      env: {},
+      env: {
+        WORKSPACE_ROOT: path.resolve(REPO_ROOT, ".."),
+      },
     },
   },
 };
