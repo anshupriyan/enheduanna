@@ -57,8 +57,43 @@ IDE_PROCESSES = {
 }
 
 
+def enable_dpi_awareness_v2() -> bool:
+    """Enables Per-Monitor DPI Awareness v2 for exact multi-monitor coordinates."""
+    try:
+        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+        res = ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+        if res:
+            return True
+    except Exception:
+        pass
+    try:
+        res = ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        if res == 0:
+            return True
+    except Exception:
+        pass
+    try:
+        return bool(ctypes.windll.user32.SetProcessDPIAware())
+    except Exception:
+        return False
+
+# Enable on module import
+enable_dpi_awareness_v2()
+
+
+class MONITORINFOEXW(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", wintypes.RECT),
+        ("rcWork", wintypes.RECT),
+        ("dwFlags", wintypes.DWORD),
+        ("szDevice", wintypes.WCHAR * 32),
+    ]
+
+
 def _init_context_thread() -> bool:
     """Attaches worker thread to interactive desktop WinSta0\\default."""
+    enable_dpi_awareness_v2()
     try:
         u32 = ctypes.windll.user32
         u32.OpenWindowStationW.restype = wintypes.HANDLE
@@ -98,12 +133,18 @@ class WindowContext:
 
 @dataclass
 class VisibleWindow:
-    """Represents a visible desktop window with spatial coordinates."""
+    """Represents a visible desktop window with spatial coordinates and Z-order metadata."""
     hwnd: int
     process_id: int
     app_name: str
     window_title: str
     bounding_box: Tuple[int, int, int, int]  # (left, top, right, bottom) in virtual screen coordinates
+    url: Optional[str] = None
+    z_index: int = 0
+    is_foreground: bool = False
+    monitor: str = "Primary"
+    visible_fraction: float = 1.0
+    is_browser: bool = False
 
 
 class ContextExtractor:
@@ -260,12 +301,16 @@ class ContextExtractor:
     def _get_visible_windows_worker(self) -> list[VisibleWindow]:
         """
         Enumerates all visible, uncloaked, non-minimized desktop windows in Z-order.
+        Uses DWMWA_EXTENDED_FRAME_BOUNDS, DPI awareness v2, and virtual-screen coordinates.
         Executes on the worker thread attached to the interactive desktop.
         """
         u32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
         dwmapi = getattr(ctypes.windll, "dwmapi", None)
+        DWMWA_EXTENDED_FRAME_BOUNDS = 9
         DWMWA_CLOAKED = 14
+        WS_EX_TOOLWINDOW = 0x00000080
+        GWL_EXSTYLE = -20
 
         # Retrieve thread desktop handle
         tid = kernel32.GetCurrentThreadId()
@@ -273,6 +318,8 @@ class ContextExtractor:
         u32.GetThreadDesktop.argtypes = [wintypes.DWORD]
         hdesk = u32.GetThreadDesktop(tid)
 
+        foreground_hwnd = u32.GetForegroundWindow()
+        own_pid = os.getpid()
         windows: list[VisibleWindow] = []
 
         def enum_handler(hwnd: int, lparam: int) -> bool:
@@ -288,21 +335,32 @@ class ContextExtractor:
                         if cloaked.value != 0:
                             return True
 
-                # 3. Geometry check
-                rect = wintypes.RECT()
-                if not u32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                # 3. Skip tool windows
+                ex_style = u32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                if ex_style & WS_EX_TOOLWINDOW:
                     return True
+
+                # 4. Geometry check using DWMWA_EXTENDED_FRAME_BOUNDS for exact window bounds
+                rect = wintypes.RECT()
+                has_bounds = False
+                if dwmapi:
+                    if dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, ctypes.byref(rect), ctypes.sizeof(rect)) == 0:
+                        has_bounds = True
+                if not has_bounds:
+                    if not u32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                        return True
+
                 width = rect.right - rect.left
                 height = rect.bottom - rect.top
                 if width <= 30 or height <= 30:
                     return True
 
-                # 4. Process Name
+                # 5. Process Name
                 pid = wintypes.DWORD()
                 u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
                 proc_name = self._get_process_name(pid.value)
 
-                # 5. Window Title
+                # 6. Window Title
                 length = u32.GetWindowTextLengthW(hwnd)
                 title = ""
                 if length > 0:
@@ -310,11 +368,43 @@ class ContextExtractor:
                     u32.GetWindowTextW(hwnd, buf, length + 1)
                     title = buf.value
 
-                # Filter out system desktop backgrounds, taskbar shells, and tray crumbs
+                # 7. Class name check for Shell / System artifacts
+                class_buf = ctypes.create_unicode_buffer(256)
+                u32.GetClassNameW(hwnd, class_buf, 256)
+                class_name = class_buf.value
+
+                if class_name in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Progman", "WorkerW", "Windows.UI.Core.CoreWindow"):
+                    return True
                 if title == "Program Manager" or proc_name in ("dwm.exe",):
                     return True
                 if not title and proc_name in ("explorer.exe", "dwm.exe", "svchost.exe", "unknown"):
                     return True
+
+                # Skip Enheduanna capture process itself
+                if pid.value == own_pid:
+                    return True
+
+                # 8. Monitor detection
+                monitor_name = "Primary"
+                hmon = u32.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST
+                if hmon:
+                    mon_info = MONITORINFOEXW()
+                    mon_info.cbSize = ctypes.sizeof(MONITORINFOEXW)
+                    if u32.GetMonitorInfoW(hmon, ctypes.byref(mon_info)):
+                        dev_name = mon_info.szDevice
+                        is_pri = bool(mon_info.dwFlags & 1)
+                        monitor_name = f"{dev_name} (Primary)" if is_pri else dev_name
+
+                is_fg = (hwnd == foreground_hwnd)
+                is_br = proc_name.lower() in BROWSER_PROCESSES
+
+                # URL extraction
+                url = None
+                if is_br:
+                    if is_fg and self._last_url and (time.time() - self._last_url_time) < 15.0:
+                        url = self._last_url
+                    else:
+                        url = self._extract_browser_url(hwnd, proc_name, title)
 
                 windows.append(
                     VisibleWindow(
@@ -323,6 +413,12 @@ class ContextExtractor:
                         app_name=proc_name,
                         window_title=title,
                         bounding_box=(rect.left, rect.top, rect.right, rect.bottom),
+                        url=url,
+                        z_index=len(windows),
+                        is_foreground=is_fg,
+                        monitor=monitor_name,
+                        visible_fraction=1.0,
+                        is_browser=is_br,
                     )
                 )
             except Exception as e:

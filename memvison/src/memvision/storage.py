@@ -59,6 +59,39 @@ class EpisodeRecord:
         return asdict(self)
 
 
+@dataclass
+class WindowRecord:
+    id: Optional[int] = None
+    capture_id: int = 0
+    hwnd: Optional[int] = None
+    app_name: str = ""
+    pid: Optional[int] = None
+    title: Optional[str] = ""
+    url: Optional[str] = None
+    rect_x: int = 0
+    rect_y: int = 0
+    rect_w: int = 0
+    rect_h: int = 0
+    z_index: int = 0
+    is_foreground: int = 0
+    monitor: Optional[str] = "Primary"
+    visible_fraction: float = 1.0
+    ocr_text: str = ""
+    ocr_lines: Optional[str] = None
+    text_hash: Optional[str] = None
+    crop_path: Optional[str] = None
+    created_at: str = ""
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        if self.ocr_lines and isinstance(self.ocr_lines, str):
+            try:
+                d["ocr_lines"] = json.loads(self.ocr_lines)
+            except Exception:
+                pass
+        return d
+
+
 class MemoryStorage:
     """
     Manages local SQLite database and FTS5 full-text index for screen captures.
@@ -111,6 +144,37 @@ class MemoryStorage:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_phash ON captures(phash);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_app_time ON captures(app_name, timestamp DESC);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_time_desc ON captures(timestamp DESC);")
+
+            # Setup windows table for Per-Window Spatial Memory
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS windows (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    capture_id INTEGER NOT NULL REFERENCES captures(id) ON DELETE CASCADE,
+                    hwnd INTEGER,
+                    app_name TEXT NOT NULL,
+                    pid INTEGER,
+                    title TEXT,
+                    url TEXT,
+                    rect_x INTEGER DEFAULT 0,
+                    rect_y INTEGER DEFAULT 0,
+                    rect_w INTEGER DEFAULT 0,
+                    rect_h INTEGER DEFAULT 0,
+                    z_index INTEGER DEFAULT 0,
+                    is_foreground INTEGER DEFAULT 0,
+                    monitor TEXT,
+                    visible_fraction REAL DEFAULT 1.0,
+                    ocr_text TEXT,
+                    ocr_lines TEXT,
+                    text_hash TEXT,
+                    crop_path TEXT,
+                    created_at TEXT
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_windows_capture_id ON windows(capture_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_windows_app_name ON windows(app_name);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_windows_text_hash ON windows(text_hash);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_windows_foreground ON windows(is_foreground);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_windows_time ON windows(created_at);")
 
             # Setup episodes table for Session / Scene Clustering (Option B)
             conn.execute("""
@@ -183,6 +247,38 @@ class MemoryStorage:
                             VALUES ('delete', old.id, old.app_name, old.window_title, old.url, old.ocr_text);
                             INSERT INTO captures_fts(rowid, app_name, window_title, url, ocr_text)
                             VALUES (new.id, new.app_name, new.window_title, new.url, new.ocr_text);
+                        END;
+                    """)
+
+                    # Setup windows_fts for Per-Window FTS search
+                    conn.execute("""
+                        CREATE VIRTUAL TABLE IF NOT EXISTS windows_fts USING fts5(
+                            app_name,
+                            title,
+                            url,
+                            ocr_text,
+                            content='windows',
+                            content_rowid='id'
+                        );
+                    """)
+                    conn.execute("""
+                        CREATE TRIGGER IF NOT EXISTS windows_ai AFTER INSERT ON windows BEGIN
+                            INSERT INTO windows_fts(rowid, app_name, title, url, ocr_text)
+                            VALUES (new.id, new.app_name, new.title, new.url, new.ocr_text);
+                        END;
+                    """)
+                    conn.execute("""
+                        CREATE TRIGGER IF NOT EXISTS windows_ad AFTER DELETE ON windows BEGIN
+                            INSERT INTO windows_fts(windows_fts, rowid, app_name, title, url, ocr_text)
+                            VALUES ('delete', old.id, old.app_name, old.title, old.url, old.ocr_text);
+                        END;
+                    """)
+                    conn.execute("""
+                        CREATE TRIGGER IF NOT EXISTS windows_au AFTER UPDATE ON windows BEGIN
+                            INSERT INTO windows_fts(windows_fts, rowid, app_name, title, url, ocr_text)
+                            VALUES ('delete', old.id, old.app_name, old.title, old.url, old.ocr_text);
+                            INSERT INTO windows_fts(rowid, app_name, title, url, ocr_text)
+                            VALUES (new.id, new.app_name, new.title, new.url, new.ocr_text);
                         END;
                     """)
                     logger.info("SQLite database and FTS5 full-text index initialized at %s", self.db_path)
@@ -414,10 +510,104 @@ class MemoryStorage:
                 return self._row_to_record(row)
         return None
 
+    def save_windows(self, windows: List[WindowRecord]) -> List[int]:
+        """Saves a batch of window records linked to a capture."""
+        if not windows:
+            return []
+        ids = []
+        with self.connection() as conn:
+            for w in windows:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO windows (
+                        capture_id, hwnd, app_name, pid, title, url,
+                        rect_x, rect_y, rect_w, rect_h, z_index, is_foreground,
+                        monitor, visible_fraction, ocr_text, ocr_lines,
+                        text_hash, crop_path, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        w.capture_id,
+                        w.hwnd,
+                        w.app_name,
+                        w.pid,
+                        w.title,
+                        w.url,
+                        w.rect_x,
+                        w.rect_y,
+                        w.rect_w,
+                        w.rect_h,
+                        w.z_index,
+                        int(w.is_foreground),
+                        w.monitor,
+                        w.visible_fraction,
+                        w.ocr_text,
+                        w.ocr_lines if isinstance(w.ocr_lines, str) else json.dumps(w.ocr_lines) if w.ocr_lines else None,
+                        w.text_hash,
+                        w.crop_path,
+                        w.created_at or datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+                w.id = cursor.lastrowid
+                ids.append(w.id)
+            conn.commit()
+        return ids
+
+    def get_windows_by_capture_id(self, capture_id: int) -> List[WindowRecord]:
+        """Returns all visible windows recorded for a capture, ordered by z_index."""
+        records = []
+        with self.connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM windows WHERE capture_id = ? ORDER BY z_index ASC;",
+                (capture_id,)
+            )
+            for row in cursor:
+                records.append(self._row_to_window_record(row))
+        return records
+
+    def get_window_by_id(self, window_id: int) -> Optional[WindowRecord]:
+        """Returns a single window record by its primary key ID."""
+        with self.connection() as conn:
+            cursor = conn.execute("SELECT * FROM windows WHERE id = ?;", (window_id,))
+            row = cursor.fetchone()
+            return self._row_to_window_record(row) if row else None
+
+    def get_window_count(self) -> int:
+        """Returns total number of window records stored."""
+        with self.connection() as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM windows;")
+            row = cursor.fetchone()
+            return row[0] if row else 0
+
+    def _row_to_window_record(self, row: sqlite3.Row) -> WindowRecord:
+        return WindowRecord(
+            id=row["id"],
+            capture_id=row["capture_id"],
+            hwnd=row["hwnd"],
+            app_name=row["app_name"],
+            pid=row["pid"],
+            title=row["title"],
+            url=row["url"],
+            rect_x=row["rect_x"],
+            rect_y=row["rect_y"],
+            rect_w=row["rect_w"],
+            rect_h=row["rect_h"],
+            z_index=row["z_index"],
+            is_foreground=row["is_foreground"],
+            monitor=row["monitor"],
+            visible_fraction=row["visible_fraction"],
+            ocr_text=row["ocr_text"] or "",
+            ocr_lines=row["ocr_lines"],
+            text_hash=row["text_hash"],
+            crop_path=row["crop_path"],
+            created_at=row["created_at"] or "",
+        )
+
     def get_stats(self) -> Dict[str, Any]:
         """Return memory storage statistics."""
         with self.connection() as conn:
             total = conn.execute("SELECT COUNT(*) FROM captures;").fetchone()[0]
+            total_windows = conn.execute("SELECT COUNT(*) FROM windows;").fetchone()[0]
             redacted = conn.execute("SELECT COUNT(*) FROM captures WHERE is_redacted = 1;").fetchone()[0]
             first_ts = conn.execute("SELECT MIN(timestamp) FROM captures;").fetchone()[0]
             last_ts = conn.execute("SELECT MAX(timestamp) FROM captures;").fetchone()[0]
@@ -426,6 +616,7 @@ class MemoryStorage:
 
             return {
                 "total_captures": total,
+                "total_windows": total_windows,
                 "redacted_captures": redacted,
                 "first_capture_timestamp": first_ts,
                 "last_capture_timestamp": last_ts,

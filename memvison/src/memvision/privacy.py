@@ -486,3 +486,7 @@ class PrivacyGatekeeper:
             if not decision.is_allowed:
                 blocked.append((win, decision))
         return blocked
+
+
+# Backward-compatible alias
+PrivacyGate = PrivacyGatekeeper
