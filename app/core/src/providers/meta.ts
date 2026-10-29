@@ -41,6 +41,48 @@ export interface ModelTurnOutput {
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
+export function sanitizeMessagesForMetaApi(messages: ChatMessage[]): ChatMessage[] {
+  let firstSystemSeen = false;
+
+  // Find all messages with image_url from newest to oldest
+  const imageIndices: number[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (Array.isArray(msg.content) && msg.content.some((c) => c.type === "image_url")) {
+      imageIndices.push(i);
+    }
+  }
+  // Retain only the single newest image to prevent request body explosion
+  const allowedImageIndices = new Set(imageIndices.slice(0, 1));
+
+  return messages.map((msg, index) => {
+    let role = msg.role;
+    // Meta API only permits role: "system" as the very first message
+    if (role === "system") {
+      if (!firstSystemSeen && index === 0) {
+        firstSystemSeen = true;
+      } else {
+        role = "user";
+      }
+    }
+
+    let content = msg.content;
+    if (Array.isArray(content)) {
+      if (!allowedImageIndices.has(index)) {
+        content = content
+          .map((part) => (part.type === "text" ? part.text : "[Historical Screenshot Analyzed]"))
+          .join(" ");
+      }
+    }
+
+    return {
+      ...msg,
+      role,
+      content,
+    };
+  });
+}
+
 export class ModelProvider {
   constructor(private config: AppConfig) {}
 
@@ -58,18 +100,20 @@ export class ModelProvider {
     const model = customModelName || this.config.model.modelName || "muse-spark-1.3";
     const reasoningEffort = customReasoningEffort || this.config.model.reasoningEffort || "high";
 
+    const sanitizedMessages = sanitizeMessagesForMetaApi(messages);
+
     traceBus.emitTrace({
       type: "turn_start",
       source: "meta-api",
       title: `Model Call: ${model} [reasoning: ${reasoningEffort}]`,
-      data: { model, baseUrl, reasoningEffort, messageCount: messages.length, toolCount: tools.length },
+      data: { model, baseUrl, reasoningEffort, messageCount: sanitizedMessages.length, toolCount: tools.length },
     });
 
     const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
 
     const payload: Record<string, unknown> = {
       model,
-      messages,
+      messages: sanitizedMessages,
       tools: tools.length > 0 ? tools : undefined,
       stream: true,
       temperature: 0.2,

@@ -490,7 +490,7 @@ export class Orchestrator {
       });
     }
 
-    // Append all tool results to session history matching tool_call_ids in order
+    // 1. Append all tool results contiguously so that every tool_call_id is satisfied
     for (const tr of toolResults) {
       sessionStore.appendMessage(sessionId, {
         role: "tool",
@@ -498,38 +498,28 @@ export class Orchestrator {
         name: tr.name,
         content: tr.content,
       });
-
-      // If the tool returned visual image data (screenshot crop / full screenshot),
-      // inject multimodal content so Muse Spark / multimodal vision encoder inspects the screen directly
-      if (tr.image) {
-        sessionStore.appendMessage(sessionId, {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `[Visual Screenshot from ${tr.name} (${tr.tool_call_id})]:`,
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${tr.image.mimeType};base64,${tr.image.data}`,
-              },
-            },
-          ],
-        });
-      }
     }
 
-    // Pack evidence from tool results and inject into session as verified timeline
-    try {
-      const packed = EvidencePacker.packEvidence(toolResults);
-      if (packed.segments.length > 0) {
-        sessionStore.appendMessage(sessionId, {
-          role: "system",
-          content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions: Lead directly with the synthesized answer in 1-3 natural sentences. Synthesize activities by purpose and duration. Do NOT echo raw IDs, raw OCR, or timestamps unless asked.`,
-        });
-      }
-    } catch {}
+    // 2. Multimodal Vision: If tools returned visual image data (screenshot crop / full screenshot),
+    // inject at most ONE multimodal user message AFTER all tool calls have been responded to contiguously.
+    const visualResult = toolResults.find((tr) => tr.image?.data);
+    if (visualResult && visualResult.image) {
+      sessionStore.appendMessage(sessionId, {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `[Visual Screenshot from ${visualResult.name} (${visualResult.tool_call_id})]: Inspect this image carefully to extract details requested by the user.`,
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:${visualResult.image.mimeType};base64,${visualResult.image.data}`,
+            },
+          },
+        ],
+      });
+    }
 
     // Emit tool_group_done
     if (res) {
@@ -630,6 +620,7 @@ export class Orchestrator {
     const enableTwoModel = Boolean(
       options.enableTwoModelRouting ?? this.config.model.enableTwoModelRouting
     );
+    let consecutiveCommandCalls = 0;
 
     try {
       while (step < maxSteps) {
@@ -650,8 +641,37 @@ export class Orchestrator {
           allTurnToolResults.push(...stepResult.toolResults);
         }
 
+        // Operator Guard (Issue 1.B): Track consecutive shell executions
+        const executedCommands = (stepResult.toolCalls || []).filter(
+          (tc) => tc.name === "execute_command"
+        );
+        if (executedCommands.length > 0) {
+          consecutiveCommandCalls += executedCommands.length;
+        } else {
+          consecutiveCommandCalls = 0;
+        }
+
         if (stepResult.isTerminal) {
           finalAnswer = stepResult.reply;
+          break;
+        }
+
+        // Operator Action Limit: After 3 consecutive shell executions without textual progress, break to synthesis
+        if (consecutiveCommandCalls >= 3) {
+          traceBus.emitTrace({
+            type: "warning",
+            source: "orchestrator",
+            title: "Operator Action Limit: 3 consecutive commands reached, breaking to synthesis",
+            data: { step, consecutiveCommandCalls },
+          });
+          if (res) {
+            res.write(
+              `event: operator_limit_reached\ndata: ${JSON.stringify({
+                step,
+                consecutiveCommandCalls,
+              })}\n\n`
+            );
+          }
           break;
         }
 
@@ -678,7 +698,7 @@ export class Orchestrator {
         const packed = EvidencePacker.packEvidence(allTurnToolResults, userPrompt);
 
         sessionStore.appendMessage(sessionId, {
-          role: "system",
+          role: "user",
           content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions: Lead with the synthesized answer in 1-3 natural sentences as someone who understood what the user was doing. Synthesize activities by purpose and duration. Do NOT echo raw IDs, raw OCR, or timestamps unless asked.`,
         });
 
@@ -697,7 +717,7 @@ export class Orchestrator {
         if (allTurnToolResults.length > 0) {
           const packed = EvidencePacker.packEvidence(allTurnToolResults, userPrompt);
           sessionStore.appendMessage(sessionId, {
-            role: "system",
+            role: "user",
             content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions: Step limit reached. Please synthesize a final answer based on all information retrieved so far. State what was found and clearly state what remains unknown. Lead with 1-3 natural sentences. Do NOT echo raw IDs, raw OCR, or timestamps unless asked.`,
           });
         }
