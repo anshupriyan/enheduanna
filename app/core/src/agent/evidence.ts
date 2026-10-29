@@ -156,16 +156,16 @@ export class EvidencePacker {
         if (!c || typeof c !== "object") continue;
         const obj = c as Record<string, unknown>;
 
-        // Capture or search record
+        // Capture, session summary, or search record
         const ts = String(obj.timestamp || obj.start_time || "");
         if (!ts) continue;
 
-        const app = String(obj.app_name || obj.app || "unknown");
-        const title = String(obj.window_title || obj.title || "");
+        const app = String(obj.app_name || obj.app || obj.main_apps || "Desktop");
+        const title = String(obj.window_title || obj.title || obj.purpose || "Activity");
         const url = obj.url ? String(obj.url) : undefined;
         const fg = Boolean(obj.is_foreground ?? true);
         const vf = typeof obj.visible_fraction === "number" ? obj.visible_fraction : 1.0;
-        const ocr = String(obj.ocr_text || obj.ocr || obj.full_ocr_text || "");
+        const ocr = String(obj.ocr_text || obj.ocr || obj.full_ocr_text || obj.summary || "");
 
         rawItems.push({
           timestamp: ts,
@@ -287,16 +287,18 @@ export class EvidencePacker {
       mergedSegments.push(current);
     }
 
-    // Filter out transient segments (< 3s) UNLESS they are explicitly mentioned in query
-    const filteredSegments = mergedSegments.filter((seg) => {
-      if (seg.duration_s >= 3) return true;
-      const appKey = seg.app.toLowerCase().replace(/\.exe$/, "");
-      const titleKey = seg.title.toLowerCase();
-      if (queryLower.includes(appKey) || (titleKey && queryLower.includes(titleKey.slice(0, 10)))) {
-        return true;
-      }
-      return false;
-    });
+    // Filter out transient segments (< 3s) only when there is an abundance of evidence (> 8 segments)
+    const filteredSegments = mergedSegments.length <= 8
+      ? mergedSegments
+      : mergedSegments.filter((seg) => {
+          if (seg.duration_s >= 3) return true;
+          const appKey = seg.app.toLowerCase().replace(/\.exe$/, "");
+          const titleKey = seg.title.toLowerCase();
+          if (queryLower.includes(appKey) || (titleKey && queryLower.includes(titleKey.slice(0, 10)))) {
+            return true;
+          }
+          return false;
+        });
 
     const overallStart = filteredSegments[0]?.start || rawItems[0].timestamp;
     const overallEnd =

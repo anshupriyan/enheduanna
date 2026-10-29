@@ -180,8 +180,7 @@ export class Orchestrator {
 
     // 1. Terminal Response: Model provided a direct answer without tool calls
     if (!turnOutput.toolCalls || turnOutput.toolCalls.length === 0) {
-      // If not already streamed as synthesis, and not suppressed for two-model synthesis, stream final answer text
-      if (!isSynthesis && !context?.suppressTerminalDelta && res) {
+      if (!isSynthesis && res) {
         res.write(`event: delta\ndata: ${JSON.stringify({ text: turnOutput.reply })}\n\n`);
       }
 
@@ -626,15 +625,13 @@ export class Orchestrator {
       while (step < maxSteps) {
         step++;
 
-        const suppressTerminalDelta = enableTwoModel && allTurnToolResults.length > 0;
-
         const stepResult = await this.executeStep(
           sessionId,
           step,
           maxSteps,
           options,
           res,
-          { seenToolCalls, repeatCounter, suppressTerminalDelta }
+          { seenToolCalls, repeatCounter }
         );
 
         if (stepResult.toolResults && stepResult.toolResults.length > 0) {
@@ -693,8 +690,8 @@ export class Orchestrator {
         }
       }
 
-      // Two-model routing: if enabled and tools were executed, Muse Wonder writes the final answer from packed evidence
-      if (enableTwoModel && allTurnToolResults.length > 0) {
+      // Synthesis fallback: ONLY run if the loop completed without a final terminal answer (e.g. step cap or loop guard hit)
+      if (!finalAnswer && allTurnToolResults.length > 0) {
         const packed = EvidencePacker.packEvidence(allTurnToolResults, userPrompt);
 
         sessionStore.appendMessage(sessionId, {
@@ -709,29 +706,6 @@ export class Orchestrator {
    - A concise concluding takeaway.
 4. Do NOT dump raw database capture IDs (like #123) or unformatted OCR text blocks. Speak naturally as a sharp, collaborative desktop intelligence assistant.`,
         });
-
-        const synthesisResult = await this.executeStep(
-          sessionId,
-          step + 1,
-          maxSteps,
-          options,
-          res,
-          { isFinalSynthesis: true }
-        );
-
-        finalAnswer = synthesisResult.reply;
-      } else if (!finalAnswer) {
-        // Step limit reached or loop guard triggered without a terminal answer: summarize
-        if (allTurnToolResults.length > 0) {
-          const packed = EvidencePacker.packEvidence(allTurnToolResults, userPrompt);
-          sessionStore.appendMessage(sessionId, {
-            role: "user",
-            content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions for Wonder Synthesis:
-1. Step limit reached. Synthesize a comprehensive final answer based on all evidence retrieved so far following system prompt rules.
-2. Structure with an overview, specific bullet points with exact file/app/video names and durations, and state clearly what remains unknown or outside the recorded range.
-3. Do NOT dump raw database capture IDs (like #123) or unformatted OCR text blocks. Speak naturally as an intelligent collaborator.`,
-          });
-        }
 
         const synthesisResult = await this.executeStep(
           sessionId,
