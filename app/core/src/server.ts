@@ -110,6 +110,7 @@ export class CoreServer {
             modelName: this.config.model.modelName,
             baseUrl: this.config.model.baseUrl,
             apiKeyConfigured: hasKey,
+            hasApiKey: hasKey,
           },
           mcp: mcpStatus,
           capture: captureStatus,

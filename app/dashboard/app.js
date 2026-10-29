@@ -406,15 +406,6 @@
       updatePill(clibridgePill, data.mcp.servers["cli-bridge"]?.connected);
 
       mcpToolsCount.textContent = `${data.mcp.totalTools} Tools Active`;
-
-      // Auto-handshake key if server restarted and client has it in localStorage
-      const savedKey = localStorage.getItem("enheduanna_api_key");
-      if (savedKey && data.modelConfig && !data.modelConfig.hasApiKey) {
-        apiFetch("/api/config", {
-          method: "POST",
-          body: JSON.stringify({ apiKey: savedKey }),
-        }).catch(() => {});
-      }
     } catch {}
   }
 
