@@ -699,7 +699,15 @@ export class Orchestrator {
 
         sessionStore.appendMessage(sessionId, {
           role: "user",
-          content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions: Lead with the synthesized answer in 1-3 natural sentences as someone who understood what the user was doing. Synthesize activities by purpose and duration. Do NOT echo raw IDs, raw OCR, or timestamps unless asked.`,
+          content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions for Wonder Synthesis:
+1. Provide a detailed, articulate, and well-structured answer following the system prompt rules.
+2. For specific questions, answer directly with the exact details and context.
+3. For activity summaries, full-day logs, or video/work histories, provide:
+   - An intuitive overview summarizing main focus areas and achievements.
+   - Clear chronological or activity-based bullet points citing exact applications, files edited, and video titles in quotes.
+   - Explicit durations and timeframes (e.g. "12:00 AM to 2:30 AM (overnight)", "45 minutes"), distinguishing active focus from quick glances or background tabs.
+   - A concise concluding takeaway.
+4. Do NOT dump raw database capture IDs (like #123) or unformatted OCR text blocks. Speak naturally as a sharp, collaborative desktop intelligence assistant.`,
         });
 
         const synthesisResult = await this.executeStep(
@@ -718,7 +726,10 @@ export class Orchestrator {
           const packed = EvidencePacker.packEvidence(allTurnToolResults, userPrompt);
           sessionStore.appendMessage(sessionId, {
             role: "user",
-            content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions: Step limit reached. Please synthesize a final answer based on all information retrieved so far. State what was found and clearly state what remains unknown. Lead with 1-3 natural sentences. Do NOT echo raw IDs, raw OCR, or timestamps unless asked.`,
+            content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions for Wonder Synthesis:
+1. Step limit reached. Synthesize a comprehensive final answer based on all evidence retrieved so far following system prompt rules.
+2. Structure with an overview, specific bullet points with exact file/app/video names and durations, and state clearly what remains unknown or outside the recorded range.
+3. Do NOT dump raw database capture IDs (like #123) or unformatted OCR text blocks. Speak naturally as an intelligent collaborator.`,
           });
         }
 
