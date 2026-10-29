@@ -69,6 +69,7 @@ export class Orchestrator {
       seenToolCalls?: Map<string, string>;
       repeatCounter?: { count: number };
       isFinalSynthesis?: boolean;
+      suppressTerminalDelta?: boolean;
     }
   ): Promise<StepExecutionResult> {
     const session = sessionStore.getSession(sessionId);
@@ -179,8 +180,8 @@ export class Orchestrator {
 
     // 1. Terminal Response: Model provided a direct answer without tool calls
     if (!turnOutput.toolCalls || turnOutput.toolCalls.length === 0) {
-      // If not already streamed as synthesis, stream the full final answer text
-      if (!isSynthesis && res) {
+      // If not already streamed as synthesis, and not suppressed for two-model synthesis, stream final answer text
+      if (!isSynthesis && !context?.suppressTerminalDelta && res) {
         res.write(`event: delta\ndata: ${JSON.stringify({ text: turnOutput.reply })}\n\n`);
       }
 
@@ -626,9 +627,15 @@ export class Orchestrator {
       data: { sessionId, promptPreview: userPrompt.substring(0, 100), maxSteps },
     });
 
+    const enableTwoModel = Boolean(
+      options.enableTwoModelRouting ?? this.config.model.enableTwoModelRouting
+    );
+
     try {
       while (step < maxSteps) {
         step++;
+
+        const suppressTerminalDelta = enableTwoModel && allTurnToolResults.length > 0;
 
         const stepResult = await this.executeStep(
           sessionId,
@@ -636,7 +643,7 @@ export class Orchestrator {
           maxSteps,
           options,
           res,
-          { seenToolCalls, repeatCounter }
+          { seenToolCalls, repeatCounter, suppressTerminalDelta }
         );
 
         if (stepResult.toolResults && stepResult.toolResults.length > 0) {
@@ -665,10 +672,6 @@ export class Orchestrator {
           break;
         }
       }
-
-      const enableTwoModel = Boolean(
-        options.enableTwoModelRouting ?? this.config.model.enableTwoModelRouting
-      );
 
       // Two-model routing: if enabled and tools were executed, Muse Wonder writes the final answer from packed evidence
       if (enableTwoModel && allTurnToolResults.length > 0) {
