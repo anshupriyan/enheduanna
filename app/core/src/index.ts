@@ -1,4 +1,4 @@
-import { loadConfig } from "./config.js";
+import { loadConfig, getApiKey } from "./config.js";
 import { initAuthToken } from "./auth.js";
 import { McpManager } from "./mcp/manager.js";
 import { CoreServer } from "./server.js";
@@ -11,9 +11,16 @@ async function main() {
     toolResultBuffer.setMaxResultLength(config.limits.maxToolResultLength);
   }
 
+  const activeKey = getApiKey(config.model.provider);
+
   console.log("  𒀭 Enheduanna Integration Core Service");
   console.log(`  • Host: http://${config.server.host}:${config.server.port}`);
   console.log(`  • Model: ${config.model.modelName} (${config.model.provider})`);
+  if (!activeKey) {
+    console.warn("  ⚠️ Warning: No API key detected. Set META_API_KEY in .env, enheduanna.config.json, or configure via Dashboard Settings.");
+  } else {
+    console.log(`  • Auth: API Key configured for ${config.model.provider.toUpperCase()} (${activeKey.substring(0, 4)}...${activeKey.slice(-4)})`);
+  }
   console.log("------------------------------------------------------------------");
 
   const mcpManager = new McpManager(config);
