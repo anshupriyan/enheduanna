@@ -17,7 +17,8 @@
     "authy.exe",
     "discord.exe",
     "discordptb.exe",
-    "discordcanary.exe"
+    "discordcanary.exe",
+    "notepad.exe"
   ],
   "blocked_urls": [
     "*discord.com*",
@@ -47,6 +48,7 @@
     "about:logins*"
   ],
   "blocked_window_titles": [
+    "*Notepad*",
     "*Discord*",
     "*Incognito*",
     "*InPrivate*",
