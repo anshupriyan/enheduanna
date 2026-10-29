@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type { ChatMessage } from "../providers/meta.js";
 import { getSystemPrompt } from "../prompts/loader.js";
+import { getRepoRoot } from "../config.js";
 
 export interface Session {
   id: string;
@@ -12,10 +15,46 @@ export interface Session {
 
 export class SessionStore {
   private sessions = new Map<string, Session>();
+  private filePath: string;
 
-  constructor() {
-    // Create a default session
-    this.createSession("New Conversation");
+  constructor(filePath?: string) {
+    this.filePath = filePath || path.join(getRepoRoot(), "data", "sessions.json");
+    this.loadFromDisk();
+  }
+
+  private loadFromDisk(): void {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        const raw = fs.readFileSync(this.filePath, "utf-8");
+        const list: Session[] = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          for (const s of list) {
+            if (s && s.id && Array.isArray(s.messages)) {
+              this.sessions.set(s.id, s);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[SessionStore] Failed to load sessions from disk, starting fresh:", err);
+    }
+
+    if (this.sessions.size === 0) {
+      this.createSession("New Conversation");
+    }
+  }
+
+  private saveToDisk(): void {
+    try {
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const data = JSON.stringify(Array.from(this.sessions.values()), null, 2);
+      fs.writeFileSync(this.filePath, data, "utf-8");
+    } catch (err) {
+      console.warn("[SessionStore] Failed to save sessions to disk:", err);
+    }
   }
 
   public createSession(title: string = "New Conversation"): Session {
@@ -33,6 +72,7 @@ export class SessionStore {
       ],
     };
     this.sessions.set(id, session);
+    this.saveToDisk();
     return session;
   }
 
@@ -47,13 +87,17 @@ export class SessionStore {
         title: s.title,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
-        messageCount: s.messages.length - 1, // minus system message
+        messageCount: Math.max(0, s.messages.length - 1), // minus system message
       }))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
   public deleteSession(id: string): boolean {
-    return this.sessions.delete(id);
+    const deleted = this.sessions.delete(id);
+    if (deleted) {
+      this.saveToDisk();
+    }
+    return deleted;
   }
 
   public appendMessage(sessionId: string, message: ChatMessage): Session | undefined {
@@ -75,6 +119,7 @@ export class SessionStore {
       session.title = cleanTitle.length > 0 ? cleanTitle : "New Conversation";
     }
 
+    this.saveToDisk();
     return session;
   }
 }

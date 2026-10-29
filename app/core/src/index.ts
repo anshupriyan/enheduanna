@@ -3,9 +3,13 @@ import { initAuthToken } from "./auth.js";
 import { McpManager } from "./mcp/manager.js";
 import { CoreServer } from "./server.js";
 import { captureSupervisor } from "./capture/supervisor.js";
+import { toolResultBuffer } from "./mcp/buffer.js";
 
 async function main() {
   const config = loadConfig();
+  if (config.limits?.maxToolResultLength) {
+    toolResultBuffer.setMaxResultLength(config.limits.maxToolResultLength);
+  }
 
   console.log("  𒀭 Enheduanna Integration Core Service");
   console.log(`  • Host: http://${config.server.host}:${config.server.port}`);

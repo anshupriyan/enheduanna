@@ -8,7 +8,7 @@ import { sessionStore } from "./agent/session.js";
 import { McpManager } from "./mcp/manager.js";
 import { Orchestrator } from "./agent/orchestrator.js";
 import { approvalManager } from "./agent/approval.js";
-import { getApiKey, getRepoRoot, type AppConfig } from "./config.js";
+import { getApiKey, getRepoRoot, saveConfigFile, persistApiKeyToEnv, type AppConfig } from "./config.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -274,12 +274,20 @@ export class CoreServer {
           this.config.model.enableTwoModelRouting = body.enableTwoModelRouting;
         }
         if (body.apiKey) {
-          if (this.config.model.provider === "omniroute") {
-            process.env.OMNIROUTE_API_KEY = body.apiKey;
-          } else {
-            process.env.META_API_KEY = body.apiKey;
-          }
+          persistApiKeyToEnv(body.apiKey, this.config.model.provider);
+          this.config.model.apiKey = body.apiKey;
         }
+
+        // Persist settings updates to enheduanna.config.json
+        saveConfigFile({
+          model: {
+            provider: this.config.model.provider,
+            modelName: this.config.model.modelName,
+            baseUrl: this.config.model.baseUrl,
+            reasoningEffort: this.config.model.reasoningEffort,
+            ...(this.config.model.apiKey ? { apiKey: this.config.model.apiKey } : {}),
+          },
+        });
 
         traceBus.emitTrace({
           type: "system",

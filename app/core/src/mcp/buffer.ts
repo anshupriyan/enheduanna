@@ -12,7 +12,7 @@ export class ToolResultBuffer {
   private maxEntries = 50;
   private maxResultLength: number;
 
-  constructor(maxResultLength: number = 4000) {
+  constructor(maxResultLength: number = 6500) {
     this.maxResultLength = maxResultLength;
   }
 
@@ -42,7 +42,7 @@ export class ToolResultBuffer {
     }
 
     const preview = text.substring(0, this.maxResultLength);
-    const truncatedText = `${preview}\n\n[... Truncated ${text.length - this.maxResultLength} characters. Full output size: ${text.length} chars. To inspect the complete result, call get_full_result({ result_id: "${id}" })]`;
+    const truncatedText = `${preview}\n\n[... Truncated ${text.length - this.maxResultLength} characters. Full output size: ${text.length} chars. To inspect the complete result, call get_full_result({ result_id: "${id}" }). Note: Only call get_full_result if the preview above is genuinely missing critical information.]`;
 
     return { text: truncatedText, isTruncated: true, bufferId: id };
   }

@@ -406,6 +406,15 @@
       updatePill(clibridgePill, data.mcp.servers["cli-bridge"]?.connected);
 
       mcpToolsCount.textContent = `${data.mcp.totalTools} Tools Active`;
+
+      // Auto-handshake key if server restarted and client has it in localStorage
+      const savedKey = localStorage.getItem("enheduanna_api_key");
+      if (savedKey && data.modelConfig && !data.modelConfig.hasApiKey) {
+        apiFetch("/api/config", {
+          method: "POST",
+          body: JSON.stringify({ apiKey: savedKey }),
+        }).catch(() => {});
+      }
     } catch {}
   }
 
@@ -527,8 +536,26 @@
         item.className = `session-item ${s.id === activeSessionId || (!activeSessionId && idx === 0) ? "active" : ""}`;
         item.dataset.id = s.id;
         item.innerHTML = `
-          <span class="session-item-title">${escapeHtml(s.title || "Untitled")}</span>
+          <span class="session-item-title" title="${escapeHtml(s.title || "Untitled")}">${escapeHtml(s.title || "Untitled")}</span>
+          <button class="session-delete-btn" title="Delete conversation" aria-label="Delete conversation">&times;</button>
         `;
+
+        const deleteBtn = item.querySelector(".session-delete-btn");
+        deleteBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          try {
+            const res = await apiFetch(`/api/sessions/${s.id}`, { method: "DELETE" });
+            if (res.ok) {
+              if (activeSessionId === s.id) {
+                activeSessionId = null;
+              }
+              await loadSessions();
+            }
+          } catch (err) {
+            console.error("Failed to delete session:", err);
+          }
+        });
+
         item.addEventListener("click", () => selectSession(s.id));
         sessionsList.appendChild(item);
       });
@@ -1394,6 +1421,16 @@
 
         const currentReasoning = localStorage.getItem("enheduanna_reasoning_effort") || cfg.reasoningEffort || "high";
         if (settingReasoningEffort) settingReasoningEffort.value = currentReasoning;
+
+        if (cfg.hasApiKey) {
+          settingApiKey.placeholder = "API key configured & saved on disk";
+        } else {
+          settingApiKey.placeholder = "sk-meta-... or omniroute key";
+        }
+        const cachedKey = localStorage.getItem("enheduanna_api_key");
+        if (cachedKey) {
+          settingApiKey.value = cachedKey;
+        }
       }
     } catch {}
   });

@@ -31,6 +31,7 @@ export interface AppConfig {
     enableTwoModelRouting?: boolean;
     baseUrl: string;
     reasoningEffort: "minimal" | "low" | "medium" | "high" | "max";
+    apiKey?: string;
   };
   limits: {
     maxSteps: number;
@@ -60,7 +61,7 @@ const DEFAULT_CONFIG: AppConfig = {
   limits: {
     maxSteps: 8,
     maxParallelToolCalls: 5,
-    maxToolResultLength: 4000,
+    maxToolResultLength: 6500,
   },
   mcpServers: {
     memvision: {
@@ -151,6 +152,15 @@ export function loadConfig(): AppConfig {
     cfg.model.baseUrl = process.env.OMNIROUTE_BASE_URL;
   }
 
+  // Hydrate environment variables with stored API key if not currently set in env
+  if (cfg.model.apiKey) {
+    if (cfg.model.provider === "omniroute" && !process.env.OMNIROUTE_API_KEY) {
+      process.env.OMNIROUTE_API_KEY = cfg.model.apiKey;
+    } else if (!process.env.META_API_KEY && !process.env.MODEL_API_KEY) {
+      process.env.META_API_KEY = cfg.model.apiKey;
+    }
+  }
+
   return cfg;
 }
 
@@ -171,9 +181,73 @@ export function resolvePythonExe(): string {
 
 export function getApiKey(provider: string = "meta"): string {
   if (provider === "omniroute") {
-    return process.env.OMNIROUTE_API_KEY || process.env.MODEL_API_KEY || process.env.META_API_KEY || "";
+    const key = process.env.OMNIROUTE_API_KEY || process.env.MODEL_API_KEY || process.env.META_API_KEY || "";
+    if (key) return key;
+  } else {
+    const key = process.env.META_API_KEY || process.env.MODEL_API_KEY || "";
+    if (key) return key;
   }
-  return process.env.META_API_KEY || process.env.MODEL_API_KEY || "";
+
+  // Fallback to checking enheduanna.config.json directly
+  try {
+    const configPath = path.join(REPO_ROOT, "enheduanna.config.json");
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed?.model?.apiKey) {
+        return parsed.model.apiKey;
+      }
+    }
+  } catch {}
+
+  return "";
+}
+
+export function saveConfigFile(updates: Record<string, any>): void {
+  const configPath = path.join(REPO_ROOT, "enheduanna.config.json");
+  let current: Record<string, any> = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      current = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    } catch {}
+  }
+
+  const merged = {
+    ...current,
+    ...updates,
+    server: { ...(current.server || {}), ...(updates.server || {}) },
+    model: { ...(current.model || {}), ...(updates.model || {}) },
+    limits: { ...(current.limits || {}), ...(updates.limits || {}) },
+  };
+
+  try {
+    fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("[Config] Failed to persist config to enheduanna.config.json:", err);
+  }
+}
+
+export function persistApiKeyToEnv(apiKey: string, provider: string = "meta"): void {
+  const envKeyName = provider === "omniroute" ? "OMNIROUTE_API_KEY" : "META_API_KEY";
+  process.env[envKeyName] = apiKey;
+  const envPath = path.join(REPO_ROOT, ".env");
+  let content = "";
+  if (fs.existsSync(envPath)) {
+    try {
+      content = fs.readFileSync(envPath, "utf-8");
+    } catch {}
+  }
+  const regex = new RegExp(`^${envKeyName}=.*$`, "m");
+  if (regex.test(content)) {
+    content = content.replace(regex, `${envKeyName}=${apiKey}`);
+  } else {
+    content = content ? `${content.trim()}\n${envKeyName}=${apiKey}\n` : `${envKeyName}=${apiKey}\n`;
+  }
+  try {
+    fs.writeFileSync(envPath, content, "utf-8");
+  } catch (err) {
+    console.warn("[Config] Failed to persist API key to .env:", err);
+  }
 }
 
 export function getRepoRoot(): string {
