@@ -68,3 +68,4 @@ Enheduanna is in genuinely strong shape for the hackathon. Both faculties are li
 > **Focus for Judge Presentation:**  
 > Lock in the core narrative: **"Ask about anything you saw on your screen, then immediately act on it."**  
 > Example live flow: Semantic search for past research/video -> extract exact timestamp -> dispatch Operator to resume work or launch workspace file. Prioritize **Streaming Terminal Output** as the highest-impact visual polish win before demo recording.
+
