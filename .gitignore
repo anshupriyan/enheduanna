@@ -41,3 +41,6 @@ enheduanna.config.json
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# External MCP Dependency
+cli-bridge/
