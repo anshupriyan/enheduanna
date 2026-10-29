@@ -3,7 +3,7 @@
     "interval_seconds": 1.0,
     "hash_threshold": 3,
     "hash_algorithm": "dhash",
-    "image_format": "jpeg",
+    "image_format": "webp",
     "image_quality": 80,
     "ocr_max_dimension": 0,
     "storage_max_dimension": 1280,

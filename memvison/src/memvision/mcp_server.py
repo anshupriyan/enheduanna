@@ -177,7 +177,7 @@ class MCPServer:
             },
             {
                 "name": "get_window_crop",
-                "description": "Retrieves an on-demand high-resolution image crop of a specific window from a capture. Applies privacy redaction/blur and returns MCP image content.",
+                "description": "Retrieves an on-demand high-resolution image crop of a specific window from a capture. Applies privacy redaction/blur and returns MCP image content. Set window_id to 0 or omit to get the full capture screenshot.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -187,7 +187,8 @@ class MCPServer:
                         },
                         "window_id": {
                             "type": "integer",
-                            "description": "The ID of the window record (obtained from search_desktop_memory or get_capture_windows).",
+                            "description": "The ID of the window record (obtained from search_desktop_memory or get_capture_windows), or 0 for the full capture screenshot.",
+                            "default": 0,
                         },
                         "max_px": {
                             "type": "integer",
@@ -195,7 +196,48 @@ class MCPServer:
                             "default": 1024,
                         },
                     },
-                    "required": ["capture_id", "window_id"],
+                    "required": ["capture_id"],
+                },
+            },
+            {
+                "name": "get_screenshot",
+                "description": "Retrieves the full screen capture image for a specific capture record ID as visual image content for visual inspection and reasoning.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "capture_id": {
+                            "type": "integer",
+                            "description": "The ID of the capture record.",
+                        },
+                        "max_px": {
+                            "type": "integer",
+                            "description": "Maximum dimension (width or height) for the returned screenshot (default: 1280).",
+                            "default": 1280,
+                        },
+                    },
+                    "required": ["capture_id"],
+                },
+            },
+            {
+                "name": "get_session_summaries",
+                "description": "Retrieves high-level synthesized activity session summaries (focus periods, purpose, main apps, distractions, and human-written activity summaries). MANDATORY FIRST STEP for answering broad questions like 'what was I doing / working on / what did I do today?'.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "since": {
+                            "type": "string",
+                            "description": "Optional UTC ISO timestamp to search from.",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "Optional UTC ISO timestamp to search until.",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of session summaries to return (default: 10).",
+                            "default": 10,
+                        },
+                    },
                 },
             },
         ]
@@ -410,25 +452,32 @@ class MCPServer:
                     except Exception:
                         pass
 
-            if crop_img is None and cap and cap.screenshot_path and Path(cap.screenshot_path).is_file():
-                try:
-                    full_screenshot = Image.open(cap.screenshot_path).convert("RGB")
-                    if win and win.rect_w > 0 and win.rect_h > 0:
-                        origin_x = 0
-                        origin_y = 0
-                        meta = cap.metadata or {}
-                        if isinstance(meta, dict) and "virtual_origin" in meta:
-                            origin_x, origin_y = meta["virtual_origin"]
-                        rx1 = max(0, min(full_screenshot.width, win.rect_x - origin_x))
-                        ry1 = max(0, min(full_screenshot.height, win.rect_y - origin_y))
-                        rx2 = max(0, min(full_screenshot.width, win.rect_x + win.rect_w - origin_x))
-                        ry2 = max(0, min(full_screenshot.height, win.rect_y + win.rect_h - origin_y))
-                        if rx2 > rx1 and ry2 > ry1:
-                            crop_img = full_screenshot.crop((rx1, ry1, rx2, ry2))
-                    if crop_img is None:
-                        crop_img = full_screenshot
-                except Exception as e:
-                    logger.error("Failed to crop from full screenshot: %s", e)
+            if crop_img is None and cap and cap.screenshot_path:
+                sp = Path(cap.screenshot_path)
+                if not sp.is_file():
+                    alt = self.screenshots_dir / sp.name
+                    if alt.is_file():
+                        sp = alt
+                if sp.is_file():
+                    try:
+                        with Image.open(sp) as full_raw:
+                            full_screenshot = full_raw.convert("RGB")
+                            if win and win.rect_w > 0 and win.rect_h > 0:
+                                origin_x = 0
+                                origin_y = 0
+                                meta = cap.metadata or {}
+                                if isinstance(meta, dict) and "virtual_origin" in meta:
+                                    origin_x, origin_y = meta["virtual_origin"]
+                                rx1 = max(0, min(full_screenshot.width, win.rect_x - origin_x))
+                                ry1 = max(0, min(full_screenshot.height, win.rect_y - origin_y))
+                                rx2 = max(0, min(full_screenshot.width, win.rect_x + win.rect_w - origin_x))
+                                ry2 = max(0, min(full_screenshot.height, win.rect_y + win.rect_h - origin_y))
+                                if rx2 > rx1 and ry2 > ry1:
+                                    crop_img = full_screenshot.crop((rx1, ry1, rx2, ry2))
+                            if crop_img is None:
+                                crop_img = full_screenshot
+                    except Exception as e:
+                        logger.error("Failed to crop from full screenshot: %s", e)
 
             if crop_img is None:
                 return {"error": f"Image crop not available for capture #{capture_id}, window #{window_id}"}
@@ -445,7 +494,7 @@ class MCPServer:
                 crop_img.thumbnail((max_px, max_px), Image.Resampling.LANCZOS)
 
             buf = io.BytesIO()
-            crop_img.save(buf, format="JPEG", quality=75)
+            crop_img.save(buf, format="WEBP", quality=75)
             b64_data = base64.b64encode(buf.getvalue()).decode("utf-8")
 
             logger.info(
@@ -463,9 +512,25 @@ class MCPServer:
                 {
                     "type": "image",
                     "data": b64_data,
-                    "mimeType": "image/jpeg",
+                    "mimeType": "image/webp",
                 }
             ]
+
+        elif name == "get_screenshot":
+            capture_id = int(args.get("capture_id", 0))
+            max_px = int(args.get("max_px", 1280))
+            return self.handle_tool_call("get_window_crop", {"capture_id": capture_id, "window_id": 0, "max_px": max_px})
+
+        elif name == "get_session_summaries":
+            since = args.get("since")
+            until = args.get("until")
+            limit = int(args.get("limit", 10))
+            summaries = self.storage.get_session_summaries(since=since, until=until, limit=limit)
+            if not summaries:
+                # Auto-backfill if empty
+                self.storage.backfill_session_summaries(hours=48)
+                summaries = self.storage.get_session_summaries(since=since, until=until, limit=limit)
+            return summaries
 
         elif name == "get_memory_statistics":
             return self.storage.get_stats()

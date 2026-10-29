@@ -333,7 +333,7 @@ class TestWindowCapturePipeline(unittest.TestCase):
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["type"], "image")
-        self.assertEqual(result[0]["mimeType"], "image/jpeg")
+        self.assertIn(result[0]["mimeType"], ("image/webp", "image/jpeg"))
 
         # Verify call was logged
         log_found = any("Served get_window_crop" in line for line in log_ctx.output)

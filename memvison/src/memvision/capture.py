@@ -185,7 +185,7 @@ class ScreenCapturer:
 
         to_save = self.create_storage_thumbnail(img) if downscale_for_storage else img
 
-        fmt = "JPEG" if self.image_format in ("jpg", "jpeg") else "WEBP"
+        fmt = "JPEG" if self.image_format.lower() in ("jpg", "jpeg") else "WEBP"
         params = {"quality": self.image_quality}
         if fmt == "JPEG":
             params["optimize"] = True
@@ -196,7 +196,7 @@ class ScreenCapturer:
     def to_bytes(self, img: Image.Image) -> bytes:
         """Encode image to compressed bytes in-memory."""
         buf = io.BytesIO()
-        fmt = "JPEG" if self.image_format in ("jpg", "jpeg") else "WEBP"
+        fmt = "JPEG" if self.image_format.lower() in ("jpg", "jpeg") else "WEBP"
         img.save(buf, format=fmt, quality=self.image_quality)
         return buf.getvalue()
 

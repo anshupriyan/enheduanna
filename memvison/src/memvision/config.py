@@ -19,7 +19,7 @@ class CaptureConfig:
     interval_seconds: float = 1.0
     hash_threshold: int = 3
     hash_algorithm: str = "dhash"       # "dhash", "phash", "ahash"
-    image_format: str = "jpeg"          # "jpeg" or "webp"
+    image_format: str = "webp"          # "webp" or "jpeg"
     image_quality: int = 80
     ocr_max_dimension: int = 0          # 0 = 100% full native resolution for OCR
     storage_max_dimension: int = 1280   # Max dimension for saved screenshot (e.g. 720p/1280px)

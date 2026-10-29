@@ -128,7 +128,7 @@ class CaptureEngine:
         try:
             now = time.time()
             max_age_sec = max_age_days * 86400
-            files = list(self.screenshots_dir.glob("*.jpg"))
+            files = list(self.screenshots_dir.glob("*.webp")) + list(self.screenshots_dir.glob("*.jpg"))
             total_bytes = sum(f.stat().st_size for f in files)
             pruned = 0
             if total_bytes > max_size_mb * 1024 * 1024 or any(now - f.stat().st_mtime > max_age_sec for f in files):
@@ -362,7 +362,7 @@ class CaptureEngine:
             self._window_text_hashes[w.hwnd] = text_hash
             self._window_text_hashes[(w.app_name, w.window_title)] = text_hash
 
-            # Save native-resolution JPEG crop (q70, max 1600px wide) directly into screenshots_dir
+            # Save native-resolution crop (max 1600px wide) directly into screenshots_dir
             crop_path = None
             if w.is_foreground or text_changed or force:
                 crop_to_save = item["crop"]
@@ -371,10 +371,15 @@ class CaptureEngine:
                     new_h = max(1, int(crop_to_save.height * ratio))
                     crop_to_save = crop_to_save.resize((1600, new_h), Image.Resampling.LANCZOS)
                 app_slug = "".join(c for c in w.app_name.lower() if c.isalnum() or c in "_-")[:12]
-                crop_filename = f"{ts_slug}_z{w.z_index}_{app_slug}_{text_hash[:6]}.jpg"
+                img_fmt = self.config.capture.image_format.lower()
+                ext = "webp" if img_fmt == "webp" else "jpg"
+                crop_filename = f"{ts_slug}_z{w.z_index}_{app_slug}_{text_hash[:6]}.{ext}"
                 crop_file = self.screenshots_dir / crop_filename
                 try:
-                    crop_to_save.save(crop_file, format="JPEG", quality=70, optimize=True)
+                    if ext == "webp":
+                        crop_to_save.save(crop_file, format="WEBP", quality=75)
+                    else:
+                        crop_to_save.save(crop_file, format="JPEG", quality=70, optimize=True)
                     crop_path = str(crop_file)
                     self._window_crop_paths[w.hwnd] = crop_path
                     self._window_crop_paths[(w.app_name, w.window_title)] = crop_path
@@ -469,7 +474,9 @@ class CaptureEngine:
         # Fallback if no window records exist (e.g. system background with 0 app windows)
         thumb_w, thumb_h = img.width, img.height
         if not primary_screenshot_path:
-            filename = f"{ts_slug}_{hash_str[:8]}.jpg"
+            img_fmt = self.config.capture.image_format.lower()
+            ext = "webp" if img_fmt == "webp" else "jpg"
+            filename = f"{ts_slug}_{hash_str[:8]}.{ext}"
             screenshot_file = self.screenshots_dir / filename
             saved_path, thumb_w, thumb_h = self.capturer.save_image(img, screenshot_file, downscale_for_storage=True)
             primary_screenshot_path = saved_path
