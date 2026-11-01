@@ -6,7 +6,11 @@ echo ======================================================
 echo   Launching Enheduanna 1-Click Environment Setup...
 echo ======================================================
 
-powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0scripts\setup.ps1"
+set EXTRA_ARGS=%*
+if /I "%1"=="fast" set EXTRA_ARGS=-FastMirror
+if /I "%1"=="--fast" set EXTRA_ARGS=-FastMirror
+
+powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0scripts\setup.ps1" !EXTRA_ARGS!
 
 if %ERRORLEVEL% neq 0 (
     echo.

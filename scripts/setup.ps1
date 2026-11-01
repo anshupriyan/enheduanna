@@ -1,5 +1,10 @@
+param(
+    [switch]$FastMirror,
+    [string]$IndexUrl = ""
+)
+
 # Enheduanna End-to-End Environment Setup Script
-# Features zero-overhead spinner animations, branch-locked cli-bridge setup, and high-speed uv/mirror package resolution.
+# Features zero-overhead spinner animations, live package download streaming, branch-locked cli-bridge, and high-speed uv package resolution.
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -17,7 +22,7 @@ Write-Host ""
 
 # -----------------------------------------------------------------------------
 # Zero-Overhead Spinner Execution Engine
-# Runs commands in native child processes with an async 100ms visual spinner
+# Runs silent builds/checks with an async 100ms visual spinner
 # -----------------------------------------------------------------------------
 function Invoke-StepWithSpinner {
     param(
@@ -102,78 +107,97 @@ function Find-FastPythonEngine {
     $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
     if (!$uvCmd) {
         $localUv = "$env:USERPROFILE\.local\bin\uv.exe"
-        if (Test-Path $localUv) { $uvCmd = $localUv }
+        if (Test-Path $localUv) {
+            $uvCmd = $localUv
+        }
     }
 
-    # 2. Check python binaries
-    $pyExec = $null
-    $pyCmd = Get-Command python -ErrorAction SilentlyContinue
-    if ($pyCmd -and $pyCmd.Source -notlike "*WindowsApps*") {
+    # 2. Check for Python binary
+    $pyCmd = $null
+
+    # First check via UV if available
+    if ($uvCmd) {
         try {
-            $v = & python --version 2>&1
-            if ($v -match "Python 3\.") { $pyExec = "python" }
+            $uvExe = if ($uvCmd -is [string]) { $uvCmd } else { $uvCmd.Source }
+            $uvPy = (& $uvExe python find 3.12 2>$null).Trim()
+            if (!$uvPy) { $uvPy = (& $uvExe python find 2>$null).Trim() }
+            if ($uvPy -and (Test-Path $uvPy)) {
+                $pyCmd = $uvPy
+            }
         } catch {}
     }
 
-    if (!$pyExec) {
-        $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
-        if ($pyLauncher) {
+    # Second check standard UV python directories
+    if (!$pyCmd) {
+        $uvPythons = Get-ChildItem "$env:APPDATA\uv\python\cpython-3.12*\python.exe" -ErrorAction SilentlyContinue
+        if (!$uvPythons) {
+            $uvPythons = Get-ChildItem "$env:APPDATA\uv\python\*\python.exe" -ErrorAction SilentlyContinue
+        }
+        if ($uvPythons) {
+            $pyCmd = ($uvPythons | Select-Object -First 1).FullName
+        }
+    }
+
+    # Third check PATH and common install locations
+    if (!$pyCmd) {
+        $candidates = @(
+            "python",
+            "py",
+            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
+            "C:\Python312\python.exe",
+            "C:\Python311\python.exe",
+            "C:\Python310\python.exe"
+        )
+
+        foreach ($cand in $candidates) {
             try {
-                $v = & py -3 --version 2>&1
-                if ($v -match "Python 3\.") { $pyExec = "py" }
+                $p = (Get-Command $cand -ErrorAction SilentlyContinue).Source
+                if (!$p) { $p = $cand }
+                if (Test-Path $p) {
+                    # Test execution (ignore 0.0.0.0 WindowsApps stubs)
+                    $test = & "$p" -c "import sys; print(sys.version_info.major)" 2>$null
+                    if ($test -match "3") {
+                        $pyCmd = $p
+                        break
+                    }
+                }
             } catch {}
         }
     }
 
-    if (!$pyExec) {
-        $searchPatterns = @(
-            "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe",
-            "$env:APPDATA\uv\python\cpython-3.1*\python.exe",
-            "$env:APPDATA\Roaming\uv\python\cpython-3.1*\python.exe",
-            "C:\Python3*\python.exe",
-            "C:\Program Files\Python3*\python.exe"
-        )
-        foreach ($pat in $searchPatterns) {
-            $found = Get-ChildItem -Path $pat -ErrorAction SilentlyContinue
-            if ($found) {
-                $pyExec = $found[0].FullName
-                break
-            }
-        }
-    }
-
-    if (!$pyExec) {
-        $siblingVenv = Join-Path $RepoRoot "..\memvison\.venv\Scripts\python.exe"
-        if (Test-Path $siblingVenv) { $pyExec = $siblingVenv }
-    }
-
-    return @{ Python = $pyExec; UV = $uvCmd }
+    return @{ UV = $uvCmd; Python = $pyCmd }
 }
 
 $engines = Find-FastPythonEngine
+
 if (!$engines.Python) {
-    Write-Host "  [FAIL] Python 3.10+ was not found on this system. Please install Python 3.10+." -ForegroundColor Red
+    Write-Host "  [FAIL] Python 3.10+ not found in PATH or standard install locations." -ForegroundColor Red
+    Write-Host "         Please install Python from https://www.python.org/downloads/ (check 'Add to PATH')." -ForegroundColor Yellow
     exit 1
 }
 
-$pyVerStr = (& $engines.Python --version 2>&1).Trim()
-Write-Host "  [OK] Python: $pyVerStr" -ForegroundColor Green
+$pyVersion = (& $engines.Python --version 2>&1).Trim()
+Write-Host "  [OK] Python: $pyVersion" -ForegroundColor Green
 
 if ($engines.UV) {
-    Write-Host "  [OK] High-Speed Engine: uv detected (blazing fast parallel package installer)" -ForegroundColor Cyan
+    Write-Host "  [OK] High-Speed Engine: uv detected (blazing fast parallel package installer)" -ForegroundColor Green
 } else {
-    Write-Host "  [INFO] High-Speed Engine: uv not found (falling back to optimized pip with binary wheels)" -ForegroundColor Gray
+    Write-Host "  [INFO] uv not detected. Running standard optimized pip resolver." -ForegroundColor DarkYellow
 }
 
 Write-Host ""
 
 # -----------------------------------------------------------------------------
-# Step 1: External Dependency cli-bridge (Branch: meta-hackathon)
+# Step 1: External CLI Bridge Repository Setup
+# Strictly locks to branch: meta-hackathon
 # -----------------------------------------------------------------------------
 if (!(Test-Path $CliBridgePath)) {
     Invoke-StepWithSpinner -Tag "[1/4]" -Title "Cloning cli-bridge (branch: meta-hackathon)" -FileName "git" -Arguments "clone -b meta-hackathon https://github.com/anshupriyan/cli-bridge.git `"$CliBridgePath`""
 } else {
-    Invoke-StepWithSpinner -Tag "[1/4]" -Title "Verifying cli-bridge branch (meta-hackathon)" -FileName "git" -Arguments "-C `"$CliBridgePath`" checkout meta-hackathon"
+    Invoke-StepWithSpinner -Tag "[1/4]" -Title "Verifying cli-bridge branch (meta-hackathon)" -FileName "git" -Arguments "checkout meta-hackathon" -WorkingDirectory $CliBridgePath
+    Invoke-StepWithSpinner -Tag "[1/4]" -Title "Pulling latest cli-bridge updates" -FileName "git" -Arguments "pull origin meta-hackathon" -WorkingDirectory $CliBridgePath
 }
 
 Invoke-StepWithSpinner -Tag "[1/4]" -Title "Installing cli-bridge dependencies (npm install)" -FileName "cmd.exe" -Arguments "/c npm install" -WorkingDirectory $CliBridgePath
@@ -184,6 +208,7 @@ Write-Host ""
 
 # -----------------------------------------------------------------------------
 # Step 2: High-Speed Python Virtual Environment (MemVision + IGI)
+# Displays live download streaming (package names, progress %, and transfer speed)
 # -----------------------------------------------------------------------------
 $VenvDir = Join-Path $RepoRoot "memvison\.venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
@@ -202,15 +227,65 @@ if (!(Test-Path $VenvPython)) {
     Write-Host "  [OK] [2/4] Virtual environment exists at memvison\.venv" -ForegroundColor Green
 }
 
-# Install dependencies using UV or Optimized Pip
+# Resolve Mirror (Default, User-specified, FastMirror, or PIP_INDEX_URL)
+$resolvedIndex = ""
+if ($IndexUrl) {
+    $resolvedIndex = $IndexUrl
+} elseif ($FastMirror) {
+    $resolvedIndex = "https://mirrors.aliyun.com/pypi/simple/"
+} elseif ($env:PIP_INDEX_URL) {
+    $resolvedIndex = $env:PIP_INDEX_URL
+}
+
+Write-Host "  [2/4] Installing Python packages (showing live download stream)..." -ForegroundColor Cyan
+if ($resolvedIndex) {
+    Write-Host "        Mirror: $resolvedIndex" -ForegroundColor DarkCyan
+}
+
+$swInstall = [System.Diagnostics.Stopwatch]::StartNew()
+
 if ($engines.UV) {
     $uvExe = if ($engines.UV -is [string]) { $engines.UV } else { $engines.UV.Source }
-    $mirrorArg = if ($env:PIP_INDEX_URL) { "--index-url $env:PIP_INDEX_URL" } else { "" }
-    Invoke-StepWithSpinner -Tag "[2/4]" -Title "Installing Python dependencies via uv (parallel binary streams)" -FileName $uvExe -Arguments "pip install --python `"$VenvPython`" $mirrorArg -r `"$MemReq`" -r `"$IgiReq`""
+    $mirrorArgs = @()
+    if ($resolvedIndex) {
+        $mirrorArgs += @("--index-url", $resolvedIndex)
+    }
+
+    & $uvExe pip install --python "$VenvPython" @mirrorArgs -r "$MemReq" -r "$IgiReq"
+    if ($LASTEXITCODE -ne 0) {
+        # If default PyPI failed or timed out and no mirror was forced, auto-fallback to high-speed CDN mirror
+        if (!$resolvedIndex) {
+            Write-Host "  [WARN] Default PyPI connection slow or timed out. Auto-switching to high-speed CDN mirror..." -ForegroundColor Yellow
+            & $uvExe pip install --python "$VenvPython" --index-url "https://mirrors.aliyun.com/pypi/simple/" -r "$MemReq" -r "$IgiReq"
+            if ($LASTEXITCODE -ne 0) {
+                throw "Python package installation failed with exit code $LASTEXITCODE"
+            }
+        } else {
+            throw "Python package installation failed with exit code $LASTEXITCODE"
+        }
+    }
 } else {
-    $mirrorArg = if ($env:PIP_INDEX_URL) { "-i $env:PIP_INDEX_URL" } else { "" }
-    Invoke-StepWithSpinner -Tag "[2/4]" -Title "Installing Python dependencies (pip with binary wheel preference)" -FileName $VenvPython -Arguments "-m pip install --quiet --prefer-binary --timeout 30 $mirrorArg -r `"$MemReq`" -r `"$IgiReq`""
+    $mirrorArgs = @()
+    if ($resolvedIndex) {
+        $mirrorArgs += @("-i", $resolvedIndex)
+    }
+
+    & "$VenvPython" -m pip install --prefer-binary --timeout 30 @mirrorArgs -r "$MemReq" -r "$IgiReq"
+    if ($LASTEXITCODE -ne 0) {
+        if (!$resolvedIndex) {
+            Write-Host "  [WARN] Default PyPI connection slow or timed out. Auto-switching to high-speed CDN mirror..." -ForegroundColor Yellow
+            & "$VenvPython" -m pip install --prefer-binary --timeout 30 -i "https://mirrors.aliyun.com/pypi/simple/" -r "$MemReq" -r "$IgiReq"
+            if ($LASTEXITCODE -ne 0) {
+                throw "Python package installation failed with exit code $LASTEXITCODE"
+            }
+        } else {
+            throw "Python package installation failed with exit code $LASTEXITCODE"
+        }
+    }
 }
+
+$installSec = [math]::Round($swInstall.Elapsed.TotalSeconds, 1)
+Write-Host "  [OK] [2/4] Python packages installed successfully (completed in $($installSec)s)" -ForegroundColor Green
 
 Write-Host ""
 
