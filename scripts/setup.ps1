@@ -1,25 +1,41 @@
-# Enheduanna End-to-End Environment Setup Script
-# Zero-deadlock spinner execution, native download streaming, branch-locked cli-bridge, and high-speed uv package resolution.
+# Enheduanna 1-Click Environment Setup Script
+# Fresh clone -> double-click setup.bat -> everything ready.
+# Features: instant ~2s idempotent re-runs, parallel node builds, auto-uv acceleration, zero pipe deadlocks.
+
+param(
+    [switch]$NoIgi,   # Optional: skip 78MB PySide6 HUD for headless / memory-only mode
+    [switch]$Force    # Optional: force reinstall/rebuild even if already built
+)
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 Write-Host "======================================================" -ForegroundColor Cyan
-Write-Host "  ENHEDUANNA - Autonomous Desktop AI Framework Setup" -ForegroundColor White
+Write-Host "  ENHEDUANNA - 1-Click Setup Engine" -ForegroundColor White
 Write-Host "======================================================" -ForegroundColor Cyan
 
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
-$CliBridgePath = (Join-Path $RepoRoot "..\cli-bridge")
+$CoreDir = Join-Path $RepoRoot "app\core"
+$VenvDir = Join-Path $RepoRoot "memvison\.venv"
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+$MemReq = Join-Path $RepoRoot "memvison\requirements.txt"
+$IgiReq = Join-Path $RepoRoot "igi\requirements.txt"
+
+# Resolve cli-bridge location (supports both sibling and self-contained repo layouts)
+$CliBridgeSibling = (Resolve-Path (Join-Path $RepoRoot "..\cli-bridge") -ErrorAction SilentlyContinue)
+$CliBridgeLocal = Join-Path $RepoRoot "cli-bridge"
+
+$CliBridgePath = if ($CliBridgeSibling) { $CliBridgeSibling.Path } elseif (Test-Path $CliBridgeLocal) { $CliBridgeLocal } else { Join-Path $RepoRoot "..\cli-bridge" }
 
 Write-Host "  Repository Root: $RepoRoot" -ForegroundColor Gray
-Write-Host "  External CLI Bridge: $CliBridgePath" -ForegroundColor Gray
+Write-Host "  CLI Bridge Path: $CliBridgePath" -ForegroundColor Gray
 Write-Host ""
 
 # -----------------------------------------------------------------------------
-# Zero-Overhead Deadlock-Free Spinner Execution Engine
-# Uses temporary log files for stdout/stderr to completely eliminate Windows pipe buffer deadlocks
+# Zero-Deadlock Visual Spinner Execution Engine
+# Uses temporary files to eliminate OS pipe buffer deadlocks across all Windows versions
 # -----------------------------------------------------------------------------
-function Invoke-StepWithSpinner {
+function Invoke-FastStep {
     param(
         [string]$Tag,
         [string]$Title,
@@ -75,6 +91,14 @@ function Invoke-StepWithSpinner {
     }
 }
 
+function Test-NodeIsBuilt($Dir) {
+    $modules = Join-Path $Dir "node_modules"
+    $dist = Join-Path $Dir "dist"
+    $build = Join-Path $Dir "build"
+    $target = if (Test-Path $dist) { $dist } elseif (Test-Path $build) { $build } else { $null }
+    return ((Test-Path $modules) -and ($target -ne $null))
+}
+
 # -----------------------------------------------------------------------------
 # Prerequisite Verification
 # -----------------------------------------------------------------------------
@@ -98,176 +122,214 @@ try {
     exit 1
 }
 
-# Python & UV Engine Resolution
-function Find-FastPythonEngine {
-    # 1. Check for uv package runner (ultra-fast, 10x-50x speedup)
-    $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
-    if (!$uvCmd) {
-        $localUv = "$env:USERPROFILE\.local\bin\uv.exe"
-        if (Test-Path $localUv) {
-            $uvCmd = $localUv
-        }
-    }
+# High-Speed uv Engine Auto-Resolution / Auto-Installation
+$uvExe = $null
+$uvCmd = Get-Command uv -ErrorAction SilentlyContinue
+if ($uvCmd) {
+    $uvExe = $uvCmd.Source
+} elseif (Test-Path "$env:USERPROFILE\.local\bin\uv.exe") {
+    $uvExe = "$env:USERPROFILE\.local\bin\uv.exe"
+}
 
-    # 2. Check for Python binary (must be >= 3.10)
-    $pyCmd = $null
+if (!$uvExe) {
+    Write-Host "  [INFO] uv not detected. Attempting quick auto-install (pip install uv)..." -ForegroundColor Cyan
+    try {
+        pip install --quiet uv 2>$null
+        $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
+        if ($uvCmd) { $uvExe = $uvCmd.Source }
+    } catch {}
+}
 
-    # First check via UV if available (prefer 3.12/3.11 for universal wheel support)
-    if ($uvCmd) {
+if ($uvExe) {
+    Write-Host "  [OK] High-Speed Engine: uv detected ($uvExe)" -ForegroundColor Green
+} else {
+    Write-Host "  [INFO] uv not detected. Running standard pip (tip: 'pip install uv' makes installs 10x faster)." -ForegroundColor DarkYellow
+}
+
+# Python Engine Resolution (Strict >= 3.10, prefer 3.12/3.11)
+$pyExe = $null
+if ($uvExe) {
+    try {
+        $c = (& $uvExe python find 3.12 2>$null).Trim()
+        if (!$c) { $c = (& $uvExe python find 3.11 2>$null).Trim() }
+        if (!$c) { $c = (& $uvExe python find 3.10 2>$null).Trim() }
+        if ($c -and (Test-Path $c)) { $pyExe = $c }
+    } catch {}
+}
+
+if (!$pyExe) {
+    $candidates = @(
+        "python",
+        "py",
+        "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
+        "C:\Python312\python.exe",
+        "C:\Python311\python.exe",
+        "C:\Python310\python.exe"
+    )
+
+    foreach ($cand in $candidates) {
         try {
-            $uvExe = if ($uvCmd -is [string]) { $uvCmd } else { $uvCmd.Source }
-            $uvPy = (& $uvExe python find 3.12 2>$null).Trim()
-            if (!$uvPy) { $uvPy = (& $uvExe python find 3.11 2>$null).Trim() }
-            if (!$uvPy) { $uvPy = (& $uvExe python find 3.10 2>$null).Trim() }
-            if ($uvPy -and (Test-Path $uvPy)) {
-                $pyCmd = $uvPy
-            }
-        } catch {}
-    }
-
-    # Second check standard UV python directories
-    if (!$pyCmd) {
-        $uvPythons = Get-ChildItem "$env:APPDATA\uv\python\cpython-3.12*\python.exe" -ErrorAction SilentlyContinue
-        if (!$uvPythons) {
-            $uvPythons = Get-ChildItem "$env:APPDATA\uv\python\*\python.exe" -ErrorAction SilentlyContinue
-        }
-        if ($uvPythons) {
-            foreach ($p in $uvPythons) {
-                $test = & $p.FullName -c "import sys; print(1 if sys.version_info >= (3, 10) else 0)" 2>$null
-                if ($test -match "1") {
-                    $pyCmd = $p.FullName
+            $p = (Get-Command $cand -ErrorAction SilentlyContinue).Source
+            if (!$p) { $p = $cand }
+            if (Test-Path $p) {
+                $t = & "$p" -c 'import sys; print(1 if sys.version_info >= (3, 10) else 0)' 2>$null
+                if ($t -match "1") {
+                    $pyExe = $p
                     break
                 }
             }
-        }
+        } catch {}
     }
-
-    # Third check PATH and common install locations
-    if (!$pyCmd) {
-        $candidates = @(
-            "python",
-            "py",
-            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
-            "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
-            "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
-            "C:\Python312\python.exe",
-            "C:\Python311\python.exe",
-            "C:\Python310\python.exe"
-        )
-
-        foreach ($cand in $candidates) {
-            try {
-                $p = (Get-Command $cand -ErrorAction SilentlyContinue).Source
-                if (!$p) { $p = $cand }
-                if (Test-Path $p) {
-                    # Verify >= 3.10 (ignore 0.0.0.0 WindowsApps stubs)
-                    $test = & "$p" -c "import sys; print(1 if sys.version_info >= (3, 10) else 0)" 2>$null
-                    if ($test -match "1") {
-                        $pyCmd = $p
-                        break
-                    }
-                }
-            } catch {}
-        }
-    }
-
-    # If UV is available but no Python 3.10+ found, auto-install Python 3.12
-    if (!$pyCmd -and $uvCmd) {
-        $uvExe = if ($uvCmd -is [string]) { $uvCmd } else { $uvCmd.Source }
-        Write-Host "  [INFO] Installing Python 3.12 via uv..." -ForegroundColor Cyan
-        & $uvExe python install 3.12
-        $pyCmd = (& $uvExe python find 3.12 2>$null).Trim()
-    }
-
-    return @{ UV = $uvCmd; Python = $pyCmd }
 }
 
-$engines = Find-FastPythonEngine
+if (!$pyExe -and $uvExe) {
+    Write-Host "  [INFO] Installing Python 3.12 via uv..." -ForegroundColor Cyan
+    & $uvExe python install 3.12
+    $pyExe = (& $uvExe python find 3.12 2>$null).Trim()
+}
 
-if (!$engines.Python) {
+if (!$pyExe) {
     Write-Host "  [FAIL] Python 3.10+ not found in PATH or standard install locations." -ForegroundColor Red
-    Write-Host "         Please install Python 3.10+ from https://www.python.org/downloads/ (check 'Add to PATH')." -ForegroundColor Yellow
+    Write-Host "         Please install Python from https://www.python.org/downloads/ (check 'Add to PATH')." -ForegroundColor Yellow
     exit 1
 }
 
-$pyVersion = (& $engines.Python --version 2>&1).Trim()
+$pyVersion = (& $pyExe --version 2>&1).Trim()
 Write-Host "  [OK] Python: $pyVersion" -ForegroundColor Green
-
-if ($engines.UV) {
-    Write-Host "  [OK] High-Speed Engine: uv detected (blazing fast parallel package installer)" -ForegroundColor Green
-} else {
-    Write-Host "  [INFO] uv not detected. Running standard pip resolver (tip: run 'pip install uv' for 10x faster installs)." -ForegroundColor DarkYellow
-}
-
 Write-Host ""
 
 # -----------------------------------------------------------------------------
-# Step 1: External CLI Bridge Repository Setup
-# Strictly locks to branch: meta-hackathon
+# Step 1: External CLI Bridge Setup (branch-locked: meta-hackathon)
 # -----------------------------------------------------------------------------
 if (!(Test-Path $CliBridgePath)) {
-    Invoke-StepWithSpinner -Tag "[1/4]" -Title "Cloning cli-bridge (branch: meta-hackathon)" -FileName "git" -Arguments "clone -b meta-hackathon https://github.com/anshupriyan/cli-bridge.git `"$CliBridgePath`""
+    Invoke-FastStep -Tag "[1/4]" -Title "Cloning cli-bridge (branch: meta-hackathon)" -FileName "git" -Arguments "clone -b meta-hackathon https://github.com/anshupriyan/cli-bridge.git `"$CliBridgePath`""
 } else {
-    Invoke-StepWithSpinner -Tag "[1/4]" -Title "Verifying cli-bridge branch (meta-hackathon)" -FileName "git" -Arguments "checkout meta-hackathon" -WorkingDirectory $CliBridgePath
-    Invoke-StepWithSpinner -Tag "[1/4]" -Title "Pulling latest cli-bridge updates" -FileName "git" -Arguments "pull origin meta-hackathon" -WorkingDirectory $CliBridgePath
+    Invoke-FastStep -Tag "[1/4]" -Title "Verifying cli-bridge branch (meta-hackathon)" -FileName "git" -Arguments "checkout meta-hackathon" -WorkingDirectory $CliBridgePath
+    Invoke-FastStep -Tag "[1/4]" -Title "Pulling latest cli-bridge updates" -FileName "git" -Arguments "pull origin meta-hackathon" -WorkingDirectory $CliBridgePath
 }
-
-Invoke-StepWithSpinner -Tag "[1/4]" -Title "Installing cli-bridge dependencies (npm install)" -FileName "cmd.exe" -Arguments "/c npm install" -WorkingDirectory $CliBridgePath
-
-Invoke-StepWithSpinner -Tag "[1/4]" -Title "Compiling cli-bridge TypeScript (npm run build)" -FileName "cmd.exe" -Arguments "/c npm run build" -WorkingDirectory $CliBridgePath
-
-Write-Host ""
 
 # -----------------------------------------------------------------------------
 # Step 2: High-Speed Python Virtual Environment (MemVision + IGI)
-# Displays live download streaming (package names, progress %, and transfer speed)
 # -----------------------------------------------------------------------------
-$VenvDir = Join-Path $RepoRoot "memvison\.venv"
-$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
-$MemReq = Join-Path $RepoRoot "memvison\requirements.txt"
-$IgiReq = Join-Path $RepoRoot "igi\requirements.txt"
-
-# Create venv if not present
-if (!(Test-Path $VenvPython)) {
-    if ($engines.UV) {
-        $uvExe = if ($engines.UV -is [string]) { $engines.UV } else { $engines.UV.Source }
-        Invoke-StepWithSpinner -Tag "[2/4]" -Title "Creating virtual environment with uv (instant)" -FileName $uvExe -Arguments "venv `"$VenvDir`" --python `"$($engines.Python)`""
+if (!(Test-Path $VenvPython) -or $Force) {
+    if ($uvExe) {
+        Invoke-FastStep -Tag "[2/4]" -Title "Creating virtual environment with uv (instant)" -FileName $uvExe -Arguments "venv `"$VenvDir`" --python `"$pyExe`""
     } else {
-        Invoke-StepWithSpinner -Tag "[2/4]" -Title "Creating virtual environment (python -m venv)" -FileName $engines.Python -Arguments "-m venv `"$VenvDir`""
+        Invoke-FastStep -Tag "[2/4]" -Title "Creating virtual environment (python -m venv)" -FileName $pyExe -Arguments "-m venv `"$VenvDir`""
     }
 } else {
     Write-Host "  [OK] [2/4] Virtual environment exists at memvison\.venv" -ForegroundColor Green
 }
 
-Write-Host "  [2/4] Installing Python packages (showing live download stream)..." -ForegroundColor Cyan
+# Idempotency Verification: Check if Python packages are already installed
+$needsPy = $Force
+if (!$needsPy) {
+    $probe = & "$VenvPython" -c "import mss, PIL, numpy, httpx; print('ok')" 2>$null
+    if ($probe -match "ok") {
+        if (!$NoIgi) {
+            $probeIgi = & "$VenvPython" -c "import PySide6; print('ok')" 2>$null
+            if (!($probeIgi -match "ok")) {
+                $needsPy = $true
+                Write-Host "  [INFO] [2/4] Core packages present, installing IGI GUI package..." -ForegroundColor Cyan
+            }
+        }
+    } else {
+        $needsPy = $true
+    }
+}
 
-$swInstall = [System.Diagnostics.Stopwatch]::StartNew()
-$env:UV_HTTP_TIMEOUT = "120"
-
-if ($engines.UV) {
-    $uvExe = if ($engines.UV -is [string]) { $engines.UV } else { $engines.UV.Source }
-    & $uvExe pip install --python "$VenvPython" -r "$MemReq" -r "$IgiReq"
+if (!$needsPy) {
+    Write-Host "  [OK] [2/4] Python packages already installed (skipping, use -Force to re-install)" -ForegroundColor Green
 } else {
-    & "$VenvPython" -m pip install --prefer-binary --timeout 120 -r "$MemReq" -r "$IgiReq"
-}
+    Write-Host "  [2/4] Installing Python packages (showing live download stream)..." -ForegroundColor Cyan
+    $swInstall = [System.Diagnostics.Stopwatch]::StartNew()
+    $env:UV_HTTP_TIMEOUT = "120"
+    $env:UV_CONCURRENT_DOWNLOADS = "50"
 
-if ($LASTEXITCODE -ne 0) {
-    throw "Python package install failed with exit code $LASTEXITCODE. Please check your internet connection and re-run setup.bat."
-}
+    $reqArgs = @("-r", "$MemReq")
+    if (!$NoIgi) {
+        $reqArgs += @("-r", "$IgiReq")
+    }
 
-$installSec = [math]::Round($swInstall.Elapsed.TotalSeconds, 1)
-Write-Host "  [OK] [2/4] Python packages installed successfully (completed in $($installSec)s)" -ForegroundColor Green
+    if ($uvExe) {
+        & $uvExe pip install --python "$VenvPython" @reqArgs
+    } else {
+        & "$VenvPython" -m pip install --prefer-binary --timeout 120 @reqArgs
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python package install failed with exit code $LASTEXITCODE. Please check your internet connection."
+    }
+
+    $installSec = [math]::Round($swInstall.Elapsed.TotalSeconds, 1)
+    Write-Host "  [OK] [2/4] Python packages installed successfully (completed in $($installSec)s)" -ForegroundColor Green
+}
 
 Write-Host ""
 
 # -----------------------------------------------------------------------------
-# Step 3: Enheduanna Core & Dashboard Compilation
+# Step 3: Node.js Projects Compilation (Parallel Fast-Track)
 # -----------------------------------------------------------------------------
-$CoreDir = Join-Path $RepoRoot "app\core"
+$needsBridge = $Force -or !(Test-NodeIsBuilt $CliBridgePath)
+$needsCore = $Force -or !(Test-NodeIsBuilt $CoreDir)
 
-Invoke-StepWithSpinner -Tag "[3/4]" -Title "Installing Enheduanna Core dependencies (npm install)" -FileName "cmd.exe" -Arguments "/c npm install" -WorkingDirectory $CoreDir
+if ($needsBridge -or $needsCore) {
+    Write-Host "  [3/4] Building Node.js projects (Core backend & CLI bridge)..." -ForegroundColor Cyan
+    $jobs = @()
 
-Invoke-StepWithSpinner -Tag "[3/4]" -Title "Building Enheduanna Core backend (npm run build)" -FileName "cmd.exe" -Arguments "/c npm run build" -WorkingDirectory $CoreDir
+    if ($needsBridge) {
+        $jobs += Start-Job -ScriptBlock {
+            param($dir)
+            Set-Location $dir
+            cmd.exe /c "npm install --no-audit --no-fund --progress=false"
+            if ($LASTEXITCODE -ne 0) { throw "npm install failed in $dir" }
+            cmd.exe /c "npm run build"
+            if ($LASTEXITCODE -ne 0) { throw "npm build failed in $dir" }
+        } -ArgumentList $CliBridgePath
+    }
+
+    if ($needsCore) {
+        $jobs += Start-Job -ScriptBlock {
+            param($dir)
+            Set-Location $dir
+            cmd.exe /c "npm install --no-audit --no-fund --progress=false"
+            if ($LASTEXITCODE -ne 0) { throw "npm install failed in $dir" }
+            cmd.exe /c "npm run build"
+            if ($LASTEXITCODE -ne 0) { throw "npm build failed in $dir" }
+        } -ArgumentList $CoreDir
+    }
+
+    $swJobs = [System.Diagnostics.Stopwatch]::StartNew()
+    $frames = @('|', '/', '-', '\')
+    if ([Console]::OutputEncoding.CodePage -eq 65001) { $frames = @('⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏') }
+    $frameIdx = 0
+
+    while ($jobs | Where-Object { $_.State -eq 'Running' }) {
+        $elapsed = [math]::Round($swJobs.Elapsed.TotalSeconds)
+        Write-Host -NoNewline "`r  $($frames[$frameIdx % $frames.Length]) [3/4] Compiling Node.js projects in parallel ($($elapsed)s)...       " -ForegroundColor Yellow
+        Start-Sleep -Milliseconds 150
+        $frameIdx++
+    }
+
+    $failed = $false
+    foreach ($j in $jobs) {
+        $out = Receive-Job $j -Keep
+        if ($j.State -eq 'Failed') {
+            $failed = $true
+            Write-Host "`n  [FAIL] Node job failed:" -ForegroundColor Red
+            Write-Host ($out | Select-Object -Last 15) -ForegroundColor DarkRed
+        }
+        Remove-Job $j -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($failed) { throw "One or more Node.js compilation jobs failed." }
+    $jobsSec = [math]::Round($swJobs.Elapsed.TotalSeconds, 1)
+    Write-Host "`r  [OK] [3/4] Node.js projects compiled successfully (done in $($jobsSec)s)                        " -ForegroundColor Green
+} else {
+    Write-Host "  [OK] [3/4] Node.js projects already compiled (skipping, use -Force to rebuild)" -ForegroundColor Green
+}
 
 Write-Host ""
 
