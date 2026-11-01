@@ -3,8 +3,9 @@
 # Features: instant ~2s idempotent re-runs, parallel node builds, auto-uv acceleration, zero pipe deadlocks.
 
 param(
-    [switch]$WithIgi, # Optional: pre-install 78MB PySide6 desktop HUD upfront (otherwise installs JIT via launch_igi.bat)
-    [switch]$Force    # Optional: force reinstall/rebuild even if already built
+    [switch]$WithIgi, # Force install PySide6 desktop HUD upfront (skip prompt)
+    [switch]$NoIgi,   # Force skip PySide6 desktop HUD (skip prompt)
+    [switch]$Force    # Force reinstall/rebuild even if already built
 )
 
 $ErrorActionPreference = "Stop"
@@ -227,48 +228,88 @@ if (!(Test-Path $VenvPython) -or $Force) {
     Write-Host "  [OK] [2/4] Virtual environment exists at memvison\.venv" -ForegroundColor Green
 }
 
-# Idempotency Verification: Check if Python packages are already installed (zero stderr to prevent NativeCommandError)
-$needsPy = $Force
-if (!$needsPy) {
+# -----------------------------------------------------------------------------
+# Part A: Core Dependencies (MemVision Scribe & OCR - 23 MB)
+# -----------------------------------------------------------------------------
+$needsCorePy = $Force
+if (!$needsCorePy) {
     $probe = & "$VenvPython" -c "try: import mss, PIL, numpy, httpx; print('ok')`nexcept: print('fail')"
-    if ($probe -match "ok") {
-        if ($WithIgi) {
-            $probeIgi = & "$VenvPython" -c "try: import PySide6; print('ok')`nexcept: print('fail')"
-            if (!($probeIgi -match "ok")) {
-                $needsPy = $true
-                Write-Host "  [INFO] [2/4] Core packages present, installing optional IGI GUI package..." -ForegroundColor Cyan
-            }
-        }
-    } else {
-        $needsPy = $true
-    }
+    if ($probe -notmatch "ok") { $needsCorePy = $true }
 }
 
-if (!$needsPy) {
-    Write-Host "  [OK] [2/4] Python packages already installed (skipping, use -Force to re-install)" -ForegroundColor Green
+if (!$needsCorePy) {
+    Write-Host "  [OK] [2/4] Core Python dependencies (MemVision) already installed." -ForegroundColor Green
 } else {
-    Write-Host "  [2/4] Installing Python packages (showing live download stream)..." -ForegroundColor Cyan
+    Write-Host "  [2/4] Installing core Python packages (MemVision Scribe)..." -ForegroundColor Cyan
     $swInstall = [System.Diagnostics.Stopwatch]::StartNew()
     $env:UV_HTTP_TIMEOUT = "120"
     $env:UV_CONCURRENT_DOWNLOADS = "50"
 
-    $reqArgs = @("-r", "$MemReq")
-    if ($WithIgi) {
-        $reqArgs += @("-r", "$IgiReq")
-    }
-
     if ($uvExe) {
-        & $uvExe pip install --python "$VenvPython" @reqArgs
+        & $uvExe pip install --python "$VenvPython" -r "$MemReq"
     } else {
-        & "$VenvPython" -m pip install --prefer-binary --timeout 120 @reqArgs
+        & "$VenvPython" -m pip install --prefer-binary --timeout 120 -r "$MemReq"
     }
 
     if ($LASTEXITCODE -ne 0) {
-        throw "Python package install failed with exit code $LASTEXITCODE. Please check your internet connection."
+        throw "Core Python package install failed with exit code $LASTEXITCODE. Please check your internet connection."
     }
 
     $installSec = [math]::Round($swInstall.Elapsed.TotalSeconds, 1)
-    Write-Host "  [OK] [2/4] Python packages installed successfully (completed in $($installSec)s)" -ForegroundColor Green
+    Write-Host "  [OK] [2/4] Core Python packages installed successfully (completed in $($installSec)s)" -ForegroundColor Green
+}
+
+# -----------------------------------------------------------------------------
+# Part B: IGI Visual Companion HUD (PySide6 Desktop GUI - ~78 MB)
+# -----------------------------------------------------------------------------
+$probeIgi = & "$VenvPython" -c "try: import PySide6; print('ok')`nexcept: print('fail')"
+if ($probeIgi -match "ok" -and !$Force) {
+    Write-Host "  [OK] [2/4] IGI visual companion (PySide6) already installed." -ForegroundColor Green
+} else {
+    $installIgi = $false
+    if ($WithIgi) {
+        $installIgi = $true
+    } elseif ($NoIgi) {
+        $installIgi = $false
+    } else {
+        $isInteractive = [Environment]::UserInteractive -and (![Console]::IsInputRedirected)
+        if ($isInteractive) {
+            Write-Host ""
+            Write-Host "  ============================================================" -ForegroundColor DarkCyan
+            Write-Host "  [OPTIONAL COMPONENT] IGI Visual Companion HUD (The Eye)" -ForegroundColor Cyan
+            Write-Host "  Enables on-screen Circle-to-Search (Ctrl+Shift+Q) & floating HUD." -ForegroundColor Gray
+            Write-Host "  Requires PySide6-Essentials (~78 MB Qt runtime)." -ForegroundColor Gray
+            Write-Host "  ============================================================" -ForegroundColor DarkCyan
+            Write-Host "  (Recommended: Type 'Y' if you want the visual overlay layer," -ForegroundColor Yellow
+            Write-Host "   or 'N' to keep setup ultra-fast in ~10s. You can always launch it" -ForegroundColor Gray
+            Write-Host "   anytime later via scripts\launch_igi.bat)" -ForegroundColor Gray
+            Write-Host ""
+            $choice = Read-Host "  Install PySide6 for IGI Visual HUD now? [Y/n]"
+            if ([string]::IsNullOrWhiteSpace($choice) -or $choice -match '^[Yy]') {
+                $installIgi = $true
+            } else {
+                $installIgi = $false
+                Write-Host "  [INFO] Skipping PySide6. (Run scripts\launch_igi.bat anytime to install)." -ForegroundColor Gray
+            }
+        } else {
+            $installIgi = $false
+        }
+    }
+
+    if ($installIgi) {
+        Write-Host "  [2/4] Installing IGI Visual Companion (PySide6-Essentials)..." -ForegroundColor Cyan
+        $swIgi = [System.Diagnostics.Stopwatch]::StartNew()
+        if ($uvExe) {
+            & $uvExe pip install --python "$VenvPython" -r "$IgiReq"
+        } else {
+            & "$VenvPython" -m pip install --prefer-binary --timeout 120 -r "$IgiReq"
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "PySide6 install failed with exit code $LASTEXITCODE. Please check your internet connection."
+        }
+        $igiSec = [math]::Round($swIgi.Elapsed.TotalSeconds, 1)
+        Write-Host "  [OK] [2/4] IGI Visual Companion (PySide6) installed successfully (completed in $($igiSec)s)" -ForegroundColor Green
+    }
 }
 
 Write-Host ""
