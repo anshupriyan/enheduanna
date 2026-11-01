@@ -191,14 +191,39 @@ class MemVisionRequestHandler(SimpleHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, "Screenshot not found")
             return
 
-        file_path = Path(record.screenshot_path)
+        raw_path = Path(record.screenshot_path)
+        file_path = raw_path
+
         if not file_path.is_file():
-            self.send_error(HTTPStatus.NOT_FOUND, "Screenshot file missing on disk")
+            filename = raw_path.name
+            candidates = [
+                Path(self.config.storage.screenshots_dir) / filename,
+                Path(self.config.storage.database_path).parent / "screenshots" / filename,
+                Path.cwd() / "data" / "screenshots" / filename,
+                Path(__file__).resolve().parent.parent.parent / "data" / "screenshots" / filename,
+                Path("C:/meta hackathon/memvison/data/screenshots") / filename,
+                Path("C:/meta hackathon/enheduanna-submission/memvison/data/screenshots") / filename,
+            ]
+            for cand in candidates:
+                if cand.is_file():
+                    file_path = cand
+                    break
+
+        if not file_path.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND, f"Screenshot file missing on disk: {raw_path.name}")
             return
 
         mime_type, _ = mimetypes.guess_type(str(file_path))
         if not mime_type:
-            mime_type = "image/jpeg"
+            ext = file_path.suffix.lower()
+            if ext == ".webp":
+                mime_type = "image/webp"
+            elif ext in (".jpg", ".jpeg"):
+                mime_type = "image/jpeg"
+            elif ext == ".png":
+                mime_type = "image/png"
+            else:
+                mime_type = "application/octet-stream"
 
         self._serve_file(file_path, mime_type, cache_seconds=86400)
 

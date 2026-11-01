@@ -48,14 +48,6 @@ const elements = {
   modalOcrCharCount: document.getElementById('modal-ocr-char-count'),
   btnCopyOcr: document.getElementById('btn-copy-ocr'),
 
-  // Chat
-  chatSidebar: document.getElementById('chat-sidebar'),
-  btnOpenChat: document.getElementById('btn-open-chat'),
-  btnCloseChat: document.getElementById('btn-close-chat'),
-  chatMessages: document.getElementById('chat-messages'),
-  chatForm: document.getElementById('chat-form'),
-  chatTextarea: document.getElementById('chat-textarea'),
-  aiModelBadge: document.getElementById('ai-model-badge'),
 };
 
 // App Initialization
@@ -133,6 +125,7 @@ function initEventListeners() {
   // Modal close
   elements.btnCloseModal.addEventListener('click', () => {
     elements.modal.close();
+    if (elements.modalScreenshotImg) elements.modalScreenshotImg.src = '';
   });
 
   // Copy OCR text
@@ -150,32 +143,6 @@ function initEventListeners() {
     }
   });
 
-  // Chat toggle
-  elements.btnOpenChat.addEventListener('click', () => {
-    elements.chatSidebar.classList.remove('collapsed');
-    elements.chatTextarea.focus();
-  });
-
-  elements.btnCloseChat.addEventListener('click', () => {
-    elements.chatSidebar.classList.add('collapsed');
-  });
-
-  // Chat submit
-  elements.chatForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const message = elements.chatTextarea.value.trim();
-    if (!message) return;
-    sendChatMessage(message);
-    elements.chatTextarea.value = '';
-  });
-
-  // Chat Enter to submit (Shift+Enter for newline)
-  elements.chatTextarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      elements.chatForm.dispatchEvent(new Event('submit'));
-    }
-  });
 }
 
 /**
@@ -416,6 +383,12 @@ async function openCaptureDetail(captureId) {
     elements.modalCaptureId.textContent = `#${capture.id}`;
     elements.modalTimestamp.textContent = new Date(capture.timestamp).toLocaleString();
     elements.modalPhash.textContent = capture.phash ? capture.phash.substring(0, 16) : '--';
+
+    // Image preview in modal
+    if (elements.modalScreenshotImg) {
+      elements.modalScreenshotImg.src = `/api/screenshot/${capture.id}`;
+      elements.modalScreenshotImg.alt = `Capture #${capture.id} - ${capture.app_name || 'Screenshot'}`;
+    }
     
     // Tab URL
     if (capture.url) {
@@ -444,75 +417,6 @@ async function openCaptureDetail(captureId) {
     console.error('Failed to open capture detail:', err);
   }
 }
-
-// AI Chat Interaction
-async function sendChatMessage(query) {
-  // Render user message bubble
-  appendMessage('user', query);
-
-  // Render assistant loading placeholder
-  const loadingBubble = appendMessage('assistant', '<div class="spinner"></div>', true);
-
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    loadingBubble.remove();
-
-    let citationsHtml = '';
-    if (data.citations && data.citations.length > 0) {
-      citationsHtml = `
-        <div class="citations-box">
-          <span class="text-xs text-muted">Referenced Memories:</span>
-          <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
-            ${data.citations.map(c => `
-              <button class="citation-chip" onclick="openCaptureDetail(${c.id})">
-                #${c.id} • ${escapeHtml(c.app_name || 'capture')}
-              </button>
-            `).join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    appendMessage('assistant', `
-      <p>${escapeHtml(data.answer).replace(/\n/g, '<br>')}</p>
-      ${citationsHtml}
-    `);
-
-    if (data.model_used) {
-      elements.aiModelBadge.textContent = data.model_used;
-    }
-
-  } catch (err) {
-    loadingBubble.remove();
-    appendMessage('assistant', `⚠️ Error synthesizing memory: ${err.message}`);
-  }
-}
-
-function appendMessage(sender, htmlContent, isLoading = false) {
-  const msgDiv = document.createElement('div');
-  msgDiv.className = `message ${sender}-message`;
-  msgDiv.innerHTML = `<div class="msg-bubble">${htmlContent}</div>`;
-  elements.chatMessages.appendChild(msgDiv);
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
-  return msgDiv;
-}
-
-// Prompt pill handler
-window.sendSuggestedPrompt = function(btn) {
-  const text = btn.textContent;
-  elements.chatTextarea.value = text;
-  elements.chatForm.dispatchEvent(new Event('submit'));
-};
 
 // Utilities
 function formatTimeAgo(isoString) {

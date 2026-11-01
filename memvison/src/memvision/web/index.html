@@ -72,12 +72,6 @@
           <span class="live-indicator"></span>
           <span>Live</span>
         </button>
-        <button id="btn-open-chat" class="btn btn-primary" title="Open AI Memory Chat Assistant">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-          <span>Ask AI</span>
-        </button>
       </div>
     </header>
 
@@ -138,65 +132,6 @@
         </div>
 
       </main>
-
-      <!-- AI Memory Chat Sidebar Panel -->
-      <aside class="chat-sidebar" id="chat-sidebar">
-        <div class="chat-header">
-          <div class="chat-title-group">
-            <div class="ai-avatar">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-              </svg>
-            </div>
-            <div>
-              <h3>Memory AI Assistant</h3>
-              <span id="ai-model-badge" class="ai-model-tag">OmniRoute free-stack</span>
-            </div>
-          </div>
-          <button id="btn-close-chat" class="btn-icon" aria-label="Close chat">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-
-        <!-- Chat Conversation Messages -->
-        <div class="chat-messages" id="chat-messages">
-          <div class="message assistant-message welcome-msg">
-            <div class="msg-bubble">
-              <p>👋 Hello! I have continuous access to your desktop memory, OCR text, and visited URLs.</p>
-              <p class="text-sm">Ask me questions about your past activity, like:</p>
-              <div class="chat-prompts">
-                <button class="prompt-pill" onclick="sendSuggestedPrompt(this)">What was that Meta Model API link?</button>
-                <button class="prompt-pill" onclick="sendSuggestedPrompt(this)">What was I doing in VS Code recently?</button>
-                <button class="prompt-pill" onclick="sendSuggestedPrompt(this)">Show my latest terminal commands</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Chat Input Form -->
-        <form class="chat-input-form" id="chat-form">
-          <div class="input-row">
-            <textarea 
-              id="chat-textarea" 
-              placeholder="Ask anything about what you saw or worked on..." 
-              rows="1"
-              required
-            ></textarea>
-            <button type="submit" id="btn-send-chat" class="btn btn-send" aria-label="Send query">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="22" y1="2" x2="11" y2="13"/>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-              </svg>
-            </button>
-          </div>
-          <div class="chat-input-footer">
-            <span class="text-xs text-muted">Powered by local FTS5 semantic ranking + LLM synthesis</span>
-          </div>
-        </form>
-      </aside>
 
     </div>
   </div>
