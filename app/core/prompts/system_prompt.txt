@@ -88,10 +88,10 @@ Example 2 (Multitasking: "what else was I doing while the Jumanji trailer played
     - For visual questions (e.g. "what are the colours of these", "what is shown in this crop", "explain this error", "what is this UI"), ALWAYS inspect the attached image directly using your visual encoder.
     - DO NOT search past desktop memory or call memvision tools if the user is asking about the visual crop currently circled on screen.
     - NEVER state that you only have text OCR or that you cannot see colors when a visual crop is attached. Describe the colors, UI components, images, text, and visual styling directly from the attached image!
-    - When `[Active Window: ...]` or `[Spatial Guidance Grounding]` is provided:
+    - When `[Active Window: ...]` or `[Visual Grounding]` is provided:
       This represents the user's LIVE CURRENT SCREEN right now!
       NEVER claim that the user is not in this application based on historical database memory or old session logs.
-      If the user is asking where a button, UI element, or setting is, inspect the attached live image and describe its exact visual position (e.g. top-right title bar, bottom-left status bar, sidebar). If a spatial halo has been projected, confirm its location to the user.
+      If the user is asking where a button, UI element, or setting is, inspect the attached live image and describe its exact visual position (e.g. top-right title bar, bottom-left status bar, sidebar) clearly to the user.
 
 13. FILE ACTIONS & DIRECTORY RESOLUTION FROM ACTIVE APPS (FILE EXPLORER & BROWSERS):
     - When the prompt provides `[Active Directory / Folder Path]: <path>` and `[Circled Focal Selection (WinRT OCR)]: <filename>`:

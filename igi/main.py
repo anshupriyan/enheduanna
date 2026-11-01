@@ -11,6 +11,13 @@ from pathlib import Path
 
 # Add package directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 try:
     from PySide6.QtCore import Qt, QTimer, Signal, QObject
@@ -41,7 +48,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    app.setApplicationName("Enheduanna IGI (𒅆)")
+    app.setApplicationName("Enheduanna IGI (Eye)")
 
     # 1. Initialize Dual MoE SAM Router
     sam_router = DualMoESAMRouter()
@@ -83,10 +90,10 @@ def main():
     app.setWindowIcon(tray_icon)
 
     tray = QSystemTrayIcon(tray_icon, app)
-    tray.setToolTip("IGI (𒅆) — The Eye of Enheduanna\nPress Ctrl+Shift+Q to Circle-to-Search")
+    tray.setToolTip("IGI - The Eye of Enheduanna\nPress Ctrl+Shift+Q to Circle-to-Search")
 
     tray_menu = QMenu()
-    act_circle = QAction("𒅆 Circle to Search (Ctrl+Shift+Q)", tray_menu)
+    act_circle = QAction("Circle to Search (Ctrl+Shift+Q)", tray_menu)
     act_circle.triggered.connect(overlay.freeze_screen_and_show)
     tray_menu.addAction(act_circle)
 
@@ -104,7 +111,7 @@ def main():
     tray.show()
 
     print("=" * 65)
-    print("   ::: IGI (𒅆) — THE EYE OF ENHEDUANNA IS ACTIVE :::")
+    print("   ::: IGI [Eye] - THE EYE OF ENHEDUANNA IS ACTIVE :::")
     print(f"   • Shortcut:        {config.hud.hotkey} (Circle anything on screen)")
     print(f"   • Core Server:     {config.server.base_url}")
     print(f"   • Tool Model:      {config.model.tool_model} (Spark 1.3)")
@@ -120,4 +127,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
