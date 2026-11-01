@@ -3,7 +3,7 @@
 # Features: instant ~2s idempotent re-runs, parallel node builds, auto-uv acceleration, zero pipe deadlocks.
 
 param(
-    [switch]$NoIgi,   # Optional: skip 78MB PySide6 HUD for headless / memory-only mode
+    [switch]$WithIgi, # Optional: pre-install 78MB PySide6 desktop HUD upfront (otherwise installs JIT via launch_igi.bat)
     [switch]$Force    # Optional: force reinstall/rebuild even if already built
 )
 
@@ -207,7 +207,11 @@ if (!(Test-Path $CliBridgePath)) {
     Invoke-FastStep -Tag "[1/4]" -Title "Cloning cli-bridge (branch: meta-hackathon)" -FileName "git" -Arguments "clone -b meta-hackathon https://github.com/anshupriyan/cli-bridge.git `"$CliBridgePath`""
 } else {
     Invoke-FastStep -Tag "[1/4]" -Title "Verifying cli-bridge branch (meta-hackathon)" -FileName "git" -Arguments "checkout meta-hackathon" -WorkingDirectory $CliBridgePath
-    Invoke-FastStep -Tag "[1/4]" -Title "Pulling latest cli-bridge updates" -FileName "git" -Arguments "pull origin meta-hackathon" -WorkingDirectory $CliBridgePath
+    try {
+        Invoke-FastStep -Tag "[1/4]" -Title "Pulling latest cli-bridge updates" -FileName "git" -Arguments "pull origin meta-hackathon" -WorkingDirectory $CliBridgePath
+    } catch {
+        Write-Host "  [WARN] [1/4] Could not pull cli-bridge updates (offline or network unreachable). Using local copy." -ForegroundColor Yellow
+    }
 }
 
 # -----------------------------------------------------------------------------
@@ -223,16 +227,16 @@ if (!(Test-Path $VenvPython) -or $Force) {
     Write-Host "  [OK] [2/4] Virtual environment exists at memvison\.venv" -ForegroundColor Green
 }
 
-# Idempotency Verification: Check if Python packages are already installed
+# Idempotency Verification: Check if Python packages are already installed (zero stderr to prevent NativeCommandError)
 $needsPy = $Force
 if (!$needsPy) {
-    $probe = & "$VenvPython" -c "import mss, PIL, numpy, httpx; print('ok')" 2>$null
+    $probe = & "$VenvPython" -c "try: import mss, PIL, numpy, httpx; print('ok')`nexcept: print('fail')"
     if ($probe -match "ok") {
-        if (!$NoIgi) {
-            $probeIgi = & "$VenvPython" -c "import PySide6; print('ok')" 2>$null
+        if ($WithIgi) {
+            $probeIgi = & "$VenvPython" -c "try: import PySide6; print('ok')`nexcept: print('fail')"
             if (!($probeIgi -match "ok")) {
                 $needsPy = $true
-                Write-Host "  [INFO] [2/4] Core packages present, installing IGI GUI package..." -ForegroundColor Cyan
+                Write-Host "  [INFO] [2/4] Core packages present, installing optional IGI GUI package..." -ForegroundColor Cyan
             }
         }
     } else {
@@ -249,7 +253,7 @@ if (!$needsPy) {
     $env:UV_CONCURRENT_DOWNLOADS = "50"
 
     $reqArgs = @("-r", "$MemReq")
-    if (!$NoIgi) {
+    if ($WithIgi) {
         $reqArgs += @("-r", "$IgiReq")
     }
 
