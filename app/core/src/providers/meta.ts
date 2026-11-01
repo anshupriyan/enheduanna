@@ -52,8 +52,8 @@ export function sanitizeMessagesForMetaApi(messages: ChatMessage[]): ChatMessage
       imageIndices.push(i);
     }
   }
-  // Retain only the single newest image to prevent request body explosion
-  const allowedImageIndices = new Set(imageIndices.slice(0, 1));
+  // Retain up to 3 most recent images so user on-screen crops and tool screenshots both stay active
+  const allowedImageIndices = new Set(imageIndices.slice(0, 3));
 
   return messages.map((msg, index) => {
     let role = msg.role;

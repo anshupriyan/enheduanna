@@ -12,7 +12,7 @@ export class ToolResultBuffer {
   private maxEntries = 50;
   private maxResultLength: number;
 
-  constructor(maxResultLength: number = 6500) {
+  constructor(maxResultLength: number = 64000) {
     this.maxResultLength = maxResultLength;
   }
 
@@ -23,7 +23,10 @@ export class ToolResultBuffer {
   public processResult(toolName: string, rawResult: unknown): { text: string; isTruncated: boolean; bufferId?: string } {
     let text = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult, null, 2);
 
-    if (text.length <= this.maxResultLength) {
+    // read_file and code inspection tools get a generous 128KB limit so markdown/source files are never truncated prematurely
+    const effectiveLimit = toolName === "read_file" ? Math.max(this.maxResultLength, 128000) : this.maxResultLength;
+
+    if (text.length <= effectiveLimit) {
       return { text, isTruncated: false };
     }
 
@@ -41,8 +44,8 @@ export class ToolResultBuffer {
       this.buffer.delete(oldest);
     }
 
-    const preview = text.substring(0, this.maxResultLength);
-    const truncatedText = `${preview}\n\n[... Truncated ${text.length - this.maxResultLength} characters. Full output size: ${text.length} chars. To inspect the complete result, call get_full_result({ result_id: "${id}" }). Note: Only call get_full_result if the preview above is genuinely missing critical information.]`;
+    const preview = text.substring(0, effectiveLimit);
+    const truncatedText = `${preview}\n\n[... Truncated ${text.length - effectiveLimit} characters. Full output size: ${text.length} chars. To inspect the complete result, call get_full_result({ result_id: "${id}" }).]`;
 
     return { text: truncatedText, isTruncated: true, bufferId: id };
   }

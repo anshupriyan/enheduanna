@@ -56,6 +56,7 @@ Modern desktop AI agents operate with complete amnesia: they cannot perceive wha
 **Enheduanna** addresses both boundaries through a unified, modular architecture over the **Model Context Protocol (MCP)**:
 - **The Scribe (`memvison/`)**: Observes, redacts, extracts, and clusters desktop activity into a searchable, privacy-guarded episodic memory.
 - **The Operator (`cli-bridge/`)**: Provides the reasoning model with a policy-bounded, sandboxed execution bridge to run terminal commands, builds, and tools safely.
+- **The Eye (`igi/` 𒅆)**: Real-time on-screen perception, Circle-to-Search with Dual MoE SAM (SAM 2 local gesture snapping + SAM 3 cloud concept guidance), and an Obsidian & Amber companion HUD.
 
 ### 4. Launch Enheduanna Integration Core & Dashboard
 The unified on-device integration layer orchestrates both MCP servers, connects to the Meta Model API (Muse Spark / Wonder) or Omniroute, and serves the localhost dashboard:

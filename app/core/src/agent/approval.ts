@@ -16,6 +16,16 @@ class ApprovalManager {
   private pending = new Map<string, ApprovalRequest>();
 
   public needsApproval(toolName: string, args: Record<string, unknown>): { needs: boolean; title?: string; description?: string } {
+    if (toolName === "copy_file") {
+      const src = String(args.source || "");
+      const dst = String(args.destination || "");
+      return {
+        needs: true,
+        title: "File Copy Authorization",
+        description: `Enheduanna is requesting permission to duplicate file "${src}" to "${dst}". Allow file copy?`,
+      };
+    }
+
     if (toolName === "request_path_access") {
       const p = String(args.path || "");
       const access = String(args.access || "ro");

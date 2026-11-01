@@ -199,6 +199,31 @@ export class McpManager {
       },
       sourceServer: "internal",
     });
+
+    // 4. Register internal virtual tool: highlight_on_screen
+    this.tools.set("highlight_on_screen", {
+      name: "highlight_on_screen",
+      description: "Project a glowing visual halo spotlight or floating tooltip card directly on the user's desktop over a specific UI element, text, or coordinate.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          target: {
+            type: "string",
+            description: "The visual element or text to spotlight (e.g. '$131.29', 'Send button', 'Update')",
+          },
+          label: {
+            type: "string",
+            description: "Short badge label for the highlight",
+          },
+          description: {
+            type: "string",
+            description: "Optional 1-sentence floating explanation tooltip",
+          },
+        },
+        required: ["target"],
+      },
+      sourceServer: "internal",
+    });
   }
 
   public getTools(): UnifiedTool[] {
@@ -255,7 +280,48 @@ export class McpManager {
       if (name === "get_full_result") {
         const resultId = String(args.result_id || "");
         const full = toolResultBuffer.getFullResult(resultId);
-        rawResult = full ? full : `Error: Buffer ID '${resultId}' not found or expired.`;
+        const content = full ? full : `Error: Buffer ID '${resultId}' not found or expired.`;
+        const durationMs = Date.now() - startTime;
+        traceBus.emitTrace({
+          type: "tool_result",
+          source: "orchestrator",
+          title: `Tool Done: get_full_result (${durationMs}ms)`,
+          data: {
+            tool: "get_full_result",
+            durationMs,
+            outputLength: content.length,
+            isTruncated: false,
+            preview: content.substring(0, 300),
+          },
+          latencyMs: durationMs,
+        });
+        return {
+          content,
+          isError: !full,
+        };
+      } else if (name === "highlight_on_screen") {
+        const target = String(args.target || "");
+        const label = String(args.label || target);
+        const description = String(args.description || "");
+        const content = `Successfully projected glowing spatial highlight over '${target}' on the user's active desktop screen.`;
+        const durationMs = Date.now() - startTime;
+        traceBus.emitTrace({
+          type: "tool_result",
+          source: "orchestrator",
+          title: `Tool Done: highlight_on_screen (${durationMs}ms)`,
+          data: {
+            tool: "highlight_on_screen",
+            durationMs,
+            target,
+            label,
+            description,
+          },
+          latencyMs: durationMs,
+        });
+        return {
+          content,
+          isError: false,
+        };
       } else if (toolDef.sourceServer === "memvision") {
         if (!this.memClient) throw new Error("memvision MCP client is not connected");
         const res = await this.memClient.callTool({ name, arguments: args });

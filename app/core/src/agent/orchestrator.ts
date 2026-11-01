@@ -18,6 +18,7 @@ export interface TurnOptions {
   provider?: string;
   enableTwoModelRouting?: boolean;
   reasoningEffort?: "minimal" | "low" | "medium" | "high" | "max";
+  images?: string[];
 }
 
 export interface StepExecutionResult {
@@ -180,7 +181,7 @@ export class Orchestrator {
 
     // 1. Terminal Response: Model provided a direct answer without tool calls
     if (!turnOutput.toolCalls || turnOutput.toolCalls.length === 0) {
-      if (!isSynthesis && res) {
+      if (!isSynthesis && res && !context?.suppressTerminalDelta) {
         res.write(`event: delta\ndata: ${JSON.stringify({ text: turnOutput.reply })}\n\n`);
       }
 
@@ -596,13 +597,25 @@ export class Orchestrator {
       session.messages.unshift({ role: "system", content: dynamicPrompt });
     }
 
-    // Append user message
-    sessionStore.appendMessage(sessionId, {
-      role: "user",
-      content: userPrompt,
-    });
+    // Append user message (with visual screenshot images if attached)
+    if (options.images && options.images.length > 0) {
+      const contentParts: any[] = [{ type: "text", text: userPrompt }];
+      for (const img of options.images) {
+        const url = img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`;
+        contentParts.push({ type: "image_url", image_url: { url } });
+      }
+      sessionStore.appendMessage(sessionId, {
+        role: "user",
+        content: contentParts,
+      });
+    } else {
+      sessionStore.appendMessage(sessionId, {
+        role: "user",
+        content: userPrompt,
+      });
+    }
 
-    const maxSteps = options.maxSteps ?? this.config.limits.maxSteps ?? 8;
+    const maxSteps = options.maxSteps ?? this.config.limits.maxSteps ?? 16;
     const seenToolCalls = new Map<string, string>();
     const repeatCounter = { count: 0 };
     const allTurnToolResults: Array<{ name: string; content: string }> = [];
@@ -631,7 +644,11 @@ export class Orchestrator {
           maxSteps,
           options,
           res,
-          { seenToolCalls, repeatCounter }
+          {
+            seenToolCalls,
+            repeatCounter,
+            suppressTerminalDelta: enableTwoModel && allTurnToolResults.length > 0,
+          }
         );
 
         if (stepResult.toolResults && stepResult.toolResults.length > 0) {
@@ -690,34 +707,83 @@ export class Orchestrator {
         }
       }
 
-      // Synthesis fallback: ONLY run if the loop completed without a final terminal answer (e.g. step cap or loop guard hit)
-      if (!finalAnswer && allTurnToolResults.length > 0) {
-        const packed = EvidencePacker.packEvidence(allTurnToolResults, userPrompt);
+      // Synthesis Phase:
+      // 1. Two-Model Routing: when enabled and tools were run, Wonder 1.0 ALWAYS writes the final synthesized answer
+      // 2. Loop Cap / Guard Fallback: if loop ended without a terminal answer, synthesize summary from retrieved evidence
+      if ((enableTwoModel && allTurnToolResults.length > 0) || !finalAnswer) {
+        if (allTurnToolResults.length > 0) {
+          const actionResults = allTurnToolResults
+            .filter(
+              (tr) =>
+                !tr.name.startsWith("get_recent_memory") &&
+                !tr.name.startsWith("search_desktop_memory") &&
+                !tr.name.startsWith("get_capture_details")
+            )
+            .map((tr) => `- ${tr.name}: ${tr.content.substring(0, 400)}`);
 
-        sessionStore.appendMessage(sessionId, {
-          role: "user",
-          content: `[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}\n\nInstructions for Wonder Synthesis:
+          const packed = EvidencePacker.packEvidence(allTurnToolResults, userPrompt);
+
+          const evidenceSections: string[] = [];
+          if (actionResults.length > 0) {
+            evidenceSections.push(`[ACTION & TOOL EXECUTION RESULTS]:\n${actionResults.join("\n")}`);
+          }
+          if (packed.segments && packed.segments.length > 0) {
+            evidenceSections.push(`[VERIFIED TIMELINE EVIDENCE]:\n${JSON.stringify(packed, null, 2)}`);
+          }
+
+          const evidenceText = evidenceSections.length > 0 ? evidenceSections.join("\n\n") : "[ACTIONS COMPLETED]";
+
+          sessionStore.appendMessage(sessionId, {
+            role: "user",
+            content: `${evidenceText}\n\nInstructions for Wonder Synthesis:
 1. Provide a detailed, articulate, and well-structured answer following the system prompt rules.
-2. For specific questions, answer directly with the exact details and context.
-3. For activity summaries, full-day logs, or video/work histories, provide:
-   - An intuitive overview summarizing main focus areas and achievements.
-   - Clear chronological or activity-based bullet points citing exact applications, files edited, and video titles in quotes.
-   - Explicit durations and timeframes (e.g. "12:00 AM to 2:30 AM (overnight)", "45 minutes"), distinguishing active focus from quick glances or background tabs.
-   - A concise concluding takeaway.
-4. Do NOT dump raw database capture IDs (like #123) or unformatted OCR text blocks. Speak naturally as a sharp, collaborative desktop intelligence assistant.`,
-        });
+2. If file, workspace, or system actions were performed (such as copy_file, write_file, or command execution), explicitly confirm the exact files, destination paths, and actions completed.
+3. For file analysis or approach notes, provide the complete, comprehensive solutions, code snippets, and architectural approaches directly in your answer. Do NOT state that you will finish later or create it in a future step.
+4. VISUAL SCREENSHOT INSPECTION: If the user attached an on-screen visual crop (or if visual screenshots were retrieved), inspect the image directly using your multimodal vision to describe colors, UI components, images, styling, and visual elements visible in the crop.
+5. For activity summaries, full-day logs, or video/work histories, provide an intuitive overview with clear chronological bullet points and durations.
+6. Do NOT dump raw database capture IDs (like #123) or unformatted OCR text blocks. Speak naturally as a sharp, collaborative desktop intelligence assistant.`,
+          });
+        }
 
-        const synthesisResult = await this.executeStep(
+        let synthesisStep = step + 1;
+        let currentSynthesisResult = await this.executeStep(
           sessionId,
-          step + 1,
-          maxSteps,
+          synthesisStep,
+          maxSteps + 2,
           options,
           res,
           { isFinalSynthesis: true }
         );
 
-        finalAnswer = synthesisResult.reply;
-      } else if (!finalAnswer) {
+        // If synthesis requested follow-up tools (e.g. verification like list_directory),
+        // loop so the model can inspect verification results and conclude with the final answer!
+        while (
+          currentSynthesisResult.toolCalls &&
+          currentSynthesisResult.toolCalls.length > 0 &&
+          synthesisStep < maxSteps + 3
+        ) {
+          synthesisStep++;
+          currentSynthesisResult = await this.executeStep(
+            sessionId,
+            synthesisStep,
+            maxSteps + 3,
+            options,
+            res,
+            { isFinalSynthesis: true }
+          );
+        }
+
+        if (currentSynthesisResult.isTerminal && currentSynthesisResult.reply) {
+          finalAnswer = currentSynthesisResult.reply;
+        } else if (!finalAnswer && currentSynthesisResult.reply) {
+          finalAnswer = currentSynthesisResult.reply;
+        } else if (finalAnswer && !currentSynthesisResult.isTerminal && res) {
+          // If synthesis did not terminate with an articulate answer, ensure the earlier confirmed answer is streamed
+          res.write(`event: delta\ndata: ${JSON.stringify({ text: `\n\n${finalAnswer}` })}\n\n`);
+        }
+      }
+
+      if (!finalAnswer) {
         finalAnswer = "I've reviewed your request but couldn't retrieve any matching memory or actions.";
         if (res) {
           res.write(`event: delta\ndata: ${JSON.stringify({ text: finalAnswer })}\n\n`);

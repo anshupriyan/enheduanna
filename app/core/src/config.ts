@@ -59,9 +59,9 @@ const DEFAULT_CONFIG: AppConfig = {
     reasoningEffort: "medium",
   },
   limits: {
-    maxSteps: 8,
+    maxSteps: 16,
     maxParallelToolCalls: 5,
-    maxToolResultLength: 6500,
+    maxToolResultLength: 64000,
   },
   mcpServers: {
     memvision: {

@@ -630,6 +630,39 @@
     return String(val);
   }
 
+  function parseMessageContent(content) {
+    if (typeof content === "string") {
+      return { text: content, images: [] };
+    }
+    if (Array.isArray(content)) {
+      let text = "";
+      const images = [];
+      for (const part of content) {
+        if (!part) continue;
+        if (typeof part === "string") {
+          text += (text ? "\n" : "") + part;
+        } else if (part.type === "text" && part.text) {
+          text += (text ? "\n" : "") + part.text;
+        } else if (part.type === "image_url") {
+          const url = part.image_url?.url || part.url;
+          if (url) images.push(url);
+        } else if (part.image_url) {
+          const url = typeof part.image_url === "string" ? part.image_url : part.image_url.url;
+          if (url) images.push(url);
+        } else if (part.type === "image" && part.data) {
+          const mime = part.mimeType || "image/jpeg";
+          images.push(`data:${mime};base64,${part.data}`);
+        }
+      }
+      return { text, images };
+    }
+    if (typeof content === "object" && content !== null) {
+      if (content.text) return { text: String(content.text), images: [] };
+      return { text: JSON.stringify(content, null, 2), images: [] };
+    }
+    return { text: String(content || ""), images: [] };
+  }
+
   function renderSessionMessages(messages) {
     messagesStream.innerHTML = "";
     const visibleMessages = messages.filter((m) => m.role !== "system");
@@ -648,6 +681,28 @@
 
     for (const msg of visibleMessages) {
       if (msg.role === "user") {
+        const { text, images } = parseMessageContent(msg.content);
+
+        // Check for internal synthetic prompt injections (Wonder 2-model routing)
+        const isInternalVisual = text.startsWith("[Visual Screenshot from");
+        const isInternalTimeline = text.startsWith("[VERIFIED TIMELINE EVIDENCE]");
+
+        if (isInternalVisual) {
+          // Harvest injected screenshot for visual references drawer
+          if (images.length > 0) {
+            const captionMatch = text.match(/\[Visual Screenshot from ([^\]]+)\]/);
+            turnVisualRefs.push({
+              toolName: captionMatch ? captionMatch[1] : "Visual Evidence",
+              imageUrl: images[0],
+            });
+          }
+          continue; // Do not render synthetic internal injection as a fake "You" bubble
+        }
+
+        if (isInternalTimeline) {
+          continue; // Do not render internal timeline prompt as a fake "You" bubble
+        }
+
         if (currentTurnContent && (turnVisualRefs.length > 0 || turnOcrRefs.length > 0)) {
           renderReferencesBar(currentTurnContent, turnVisualRefs, turnOcrRefs);
         }
@@ -661,7 +716,7 @@
           currentTurnContent = createAssistantRow();
         }
 
-        if (msg.reasoning_content && msg.reasoning_content.trim()) {
+        if (msg.reasoning_content && typeof msg.reasoning_content === "string" && msg.reasoning_content.trim()) {
           const thinkEl = document.createElement("details");
           thinkEl.className = "thinking-drawer";
           thinkEl.innerHTML = `
@@ -684,12 +739,15 @@
             groupCard.appendChild(chip);
           }
           currentTurnContent.appendChild(groupCard);
-        } else if (msg.content && msg.content.trim()) {
-          const bubble = document.createElement("div");
-          bubble.className = "message-bubble";
-          bubble.innerHTML = renderMarkdown(msg.content);
-          currentTurnContent.appendChild(bubble);
-          collapseEvidence(currentTurnContent);
+        } else if (msg.content) {
+          const parsed = parseMessageContent(msg.content);
+          if (parsed.text && parsed.text.trim()) {
+            const bubble = document.createElement("div");
+            bubble.className = "message-bubble";
+            bubble.innerHTML = renderMarkdown(parsed.text);
+            currentTurnContent.appendChild(bubble);
+            collapseEvidence(currentTurnContent);
+          }
         }
       } else if (msg.role === "tool") {
         appendInlineToolResult(msg.tool_call_id, msg.name, msg.content);
@@ -713,13 +771,31 @@
   }
 
   // 8. Chat Rendering
-  function appendUserMessage(text) {
+  function appendUserMessage(content) {
     chatWelcome.style.display = "none";
+    const { text, images } = parseMessageContent(content);
+
     const row = document.createElement("div");
     row.className = "message-row user";
+
+    let mediaHtml = "";
+    if (images.length > 0) {
+      mediaHtml = `
+        <div class="user-attached-media" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;">
+          ${images.map(img => `
+            <div class="user-media-thumb" style="border-radius: 6px; overflow: hidden; border: 1px solid var(--border-subtle, #333); max-width: 160px; max-height: 120px; background: #111;">
+              <img src="${img}" style="width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer;" onclick="window.open(this.src, '_blank')" title="Click to view full image" />
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    const textHtml = text ? `<div class="user-text-content">${escapeHtml(text).replace(/\n/g, "<br>")}</div>` : "";
+
     row.innerHTML = `
       <div class="message-header">You</div>
-      <div class="message-bubble">${escapeHtml(text)}</div>
+      <div class="message-bubble">${mediaHtml}${textHtml}</div>
     `;
     messagesStream.appendChild(row);
     messagesStream.scrollTop = messagesStream.scrollHeight;
@@ -1481,6 +1557,10 @@
 
   function escapeHtml(text) {
     if (!text) return "";
+    if (typeof text !== "string") {
+      const parsed = parseMessageContent(text);
+      text = parsed.text;
+    }
     return String(text)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")

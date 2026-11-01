@@ -137,6 +137,7 @@ export class CoreServer {
         const body = await this.parseJsonBody<{
           sessionId?: string;
           message?: string;
+          images?: string[];
           options?: {
             maxSteps?: number;
             apiKey?: string;
@@ -165,7 +166,12 @@ export class CoreServer {
           "Access-Control-Allow-Origin": "*",
         });
 
-        await this.orchestrator.runTurn(sessionId, body.message, body.options || {}, res);
+        const turnOptions = {
+          ...(body.options || {}),
+          images: Array.isArray(body.images) ? body.images : undefined,
+        };
+
+        await this.orchestrator.runTurn(sessionId, body.message, turnOptions, res);
         return;
       }
 
