@@ -274,65 +274,25 @@ if (!$needsPy) {
 Write-Host ""
 
 # -----------------------------------------------------------------------------
-# Step 3: Node.js Projects Compilation (Parallel Fast-Track)
+# Step 3: Node.js Projects Compilation (CLI Bridge & Core Backend)
 # -----------------------------------------------------------------------------
 $needsBridge = $Force -or !(Test-NodeIsBuilt $CliBridgePath)
 $needsCore = $Force -or !(Test-NodeIsBuilt $CoreDir)
 
-if ($needsBridge -or $needsCore) {
-    Write-Host "  [3/4] Building Node.js projects (Core backend & CLI bridge)..." -ForegroundColor Cyan
-    $jobs = @()
+if ($needsBridge) {
+    Invoke-FastStep -Tag "[3/4]" -Title "Installing CLI bridge dependencies" -FileName "npm" -Arguments "install --no-audit --no-fund" -WorkingDirectory $CliBridgePath
+    Invoke-FastStep -Tag "[3/4]" -Title "Compiling CLI bridge (TypeScript build)" -FileName "npm" -Arguments "run build" -WorkingDirectory $CliBridgePath
+}
 
-    if ($needsBridge) {
-        $jobs += Start-Job -ScriptBlock {
-            param($dir)
-            Set-Location $dir
-            cmd.exe /c "npm install --no-audit --no-fund --progress=false"
-            if ($LASTEXITCODE -ne 0) { throw "npm install failed in $dir" }
-            cmd.exe /c "npm run build"
-            if ($LASTEXITCODE -ne 0) { throw "npm build failed in $dir" }
-        } -ArgumentList $CliBridgePath
-    }
+if ($needsCore) {
+    Invoke-FastStep -Tag "[3/4]" -Title "Installing Enheduanna Core dependencies" -FileName "npm" -Arguments "install --no-audit --no-fund" -WorkingDirectory $CoreDir
+    Invoke-FastStep -Tag "[3/4]" -Title "Compiling Enheduanna Core (TypeScript build)" -FileName "npm" -Arguments "run build" -WorkingDirectory $CoreDir
+}
 
-    if ($needsCore) {
-        $jobs += Start-Job -ScriptBlock {
-            param($dir)
-            Set-Location $dir
-            cmd.exe /c "npm install --no-audit --no-fund --progress=false"
-            if ($LASTEXITCODE -ne 0) { throw "npm install failed in $dir" }
-            cmd.exe /c "npm run build"
-            if ($LASTEXITCODE -ne 0) { throw "npm build failed in $dir" }
-        } -ArgumentList $CoreDir
-    }
-
-    $swJobs = [System.Diagnostics.Stopwatch]::StartNew()
-    $frames = @('|', '/', '-', '\')
-    if ([Console]::OutputEncoding.CodePage -eq 65001) { $frames = @('⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏') }
-    $frameIdx = 0
-
-    while ($jobs | Where-Object { $_.State -eq 'Running' }) {
-        $elapsed = [math]::Round($swJobs.Elapsed.TotalSeconds)
-        Write-Host -NoNewline "`r  $($frames[$frameIdx % $frames.Length]) [3/4] Compiling Node.js projects in parallel ($($elapsed)s)...       " -ForegroundColor Yellow
-        Start-Sleep -Milliseconds 150
-        $frameIdx++
-    }
-
-    $failed = $false
-    foreach ($j in $jobs) {
-        $out = Receive-Job $j -Keep
-        if ($j.State -eq 'Failed') {
-            $failed = $true
-            Write-Host "`n  [FAIL] Node job failed:" -ForegroundColor Red
-            Write-Host ($out | Select-Object -Last 15) -ForegroundColor DarkRed
-        }
-        Remove-Job $j -Force -ErrorAction SilentlyContinue
-    }
-
-    if ($failed) { throw "One or more Node.js compilation jobs failed." }
-    $jobsSec = [math]::Round($swJobs.Elapsed.TotalSeconds, 1)
-    Write-Host "`r  [OK] [3/4] Node.js projects compiled successfully (done in $($jobsSec)s)                        " -ForegroundColor Green
-} else {
+if (!$needsBridge -and !$needsCore) {
     Write-Host "  [OK] [3/4] Node.js projects already compiled (skipping, use -Force to rebuild)" -ForegroundColor Green
+} else {
+    Write-Host "  [OK] [3/4] Node.js projects compiled successfully." -ForegroundColor Green
 }
 
 Write-Host ""
