@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 > nul
 setlocal enabledelayedexpansion
 
 echo ======================================================
@@ -15,4 +16,3 @@ if %ERRORLEVEL% neq 0 (
 )
 
 endlocal
-
