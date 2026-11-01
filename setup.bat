@@ -1,16 +1,12 @@
 @echo off
 chcp 65001 > nul
-setlocal enabledelayedexpansion
+setlocal
 
 echo ======================================================
 echo   Launching Enheduanna 1-Click Environment Setup...
 echo ======================================================
 
-set EXTRA_ARGS=%*
-if /I "%1"=="fast" set EXTRA_ARGS=-FastMirror
-if /I "%1"=="--fast" set EXTRA_ARGS=-FastMirror
-
-powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0scripts\setup.ps1" !EXTRA_ARGS!
+powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0scripts\setup.ps1"
 
 if %ERRORLEVEL% neq 0 (
     echo.
@@ -19,4 +15,6 @@ if %ERRORLEVEL% neq 0 (
     exit /b %ERRORLEVEL%
 )
 
+echo.
+pause
 endlocal
